@@ -1,6 +1,6 @@
 # Agente Comercial Autónomo — Demo (Nova Distribution)
 
-Demo funcional de SISTECOMP para mostrar en reuniones comerciales: un agente que detecta oportunidades en una cartera de clientes, conversa por WhatsApp (simulado en esta V1), negocia dentro de reglas de negocio, y escala a un humano solo cuando la decisión excede su autonomía.
+Demo funcional de SISTECOMP para mostrar en reuniones comerciales: un agente que detecta oportunidades en una cartera de clientes, conversa por WhatsApp (real, vía Meta Cloud API — con respaldo simulado en la app si no hay credenciales configuradas), negocia dentro de reglas de negocio, y escala a un humano solo cuando la decisión excede su autonomía.
 
 ## Stack
 
@@ -23,7 +23,31 @@ Demo funcional de SISTECOMP para mostrar en reuniones comerciales: un agente que
    - `DATABASE_URL` — Supabase Dashboard → Project Settings → Database → Connection string (modo "Transaction pooler").
    - `OPENAI_API_KEY` — platform.openai.com/api-keys.
    - `DEMO_ACCESS_PASSWORD` — opcional en local; obligatorio antes de compartir la URL fuera de tu máquina (gate simple sin sistema de usuarios).
+   - `WHATSAPP_*` — opcionales; sin ellos la app funciona igual (conversación 100% dentro de la app). Ver "WhatsApp real" abajo.
 3. `npm run dev`
+
+## WhatsApp real (Etapa 5)
+
+Canal desacoplado de la lógica del agente (`src/lib/channel/`): si las credenciales de WhatsApp están configuradas, cada respuesta del agente también se envía al teléfono real del cliente, y las respuestas que el cliente escriba en WhatsApp llegan a la app por un webhook — todo además de (no en vez de) la vista de conversación dentro de la app, que sigue siendo el "God view" que se proyecta en la reunión.
+
+**Credenciales necesarias** (`.env.local`):
+
+| Variable | De dónde sale |
+|---|---|
+| `WHATSAPP_ACCESS_TOKEN` | Token de un System User de Meta Business con permiso `whatsapp_business_messaging` sobre esta app (o el token temporal de 24h que da el panel de pruebas, para empezar). |
+| `WHATSAPP_PHONE_NUMBER_ID` | Panel de la app de Meta → WhatsApp → API Setup. |
+| `WHATSAPP_VERIFY_TOKEN` | Lo inventas tú — cadena arbitraria que se pega igual en Meta al registrar el webhook. |
+| `WHATSAPP_APP_SECRET` | Panel de la app de Meta → App Settings → Basic. Sin esto el webhook acepta peticiones sin firmar (útil mientras llegan las demás credenciales, pero no para producción). |
+
+**Importante:** usar una **App de Meta separada** de la que usa el agente de soporte (`vps-assistant/n8n-agente-soporte`) — Meta enruta todos los números de una misma app al mismo webhook, y mezclar los dos agentes en una sola app arriesga romper el flujo de soporte en producción.
+
+**Webhook:** `GET|POST /api/webhooks/whatsapp`. Registrar en el panel de Meta (WhatsApp → Configuration → Webhook) la URL pública de esta app + `/api/webhooks/whatsapp`, con el mismo valor de `WHATSAPP_VERIFY_TOKEN`, suscrito al campo `messages`.
+
+**Probar en local:** Meta necesita una URL pública HTTPS para entregar el webhook — `localhost:3000` no sirve. Usa un túnel (`ngrok http 3000`, `cloudflared tunnel --url http://localhost:3000`, etc.) y registra esa URL temporal en Meta mientras pruebas.
+
+**Idempotencia:** cada mensaje entrante guarda el `id` de WhatsApp en `messages.external_message_id` (único); si Meta reintenta la entrega del mismo mensaje, se ignora en vez de generar una respuesta duplicada.
+
+**Resiliencia:** un envío real fallido (WhatsApp caído, token vencido) se registra en `audit_log` pero nunca rompe la conversación dentro de la app — verificado en vivo forzando un 401 real contra la Graph API de Meta con credenciales inválidas.
 
 ## Scripts
 
@@ -67,10 +91,12 @@ Demo funcional de SISTECOMP para mostrar en reuniones comerciales: un agente que
 - **IDs que el modelo no puede conocer**: el modelo no tiene forma de saber su propio `conversationId`; en una prueba intentó pedírselo al cliente. Fix: `customerId`/`conversationId` se eliminan del JSON Schema que ve el modelo y el runtime los inyecta siempre desde el contexto (`src/lib/agent/tools.ts`, `src/lib/agent/runtime.ts`).
 - **Doble codificación de JSON**: las columnas `jsonb` se guardaban como texto doblemente escapado porque el código hacía `JSON.stringify()` manualmente y el driver de Postgres también lo hace al detectar `::jsonb`. Esto rompía silenciosamente todo el flujo de aprobaciones. Fix: helper centralizado `toJsonb()` (`src/lib/db.ts`) que usa `sql.json()` correctamente, más un `Proxy` alrededor del cliente perezoso de Postgres (antes, el wrapper perdía métodos como `.json()`/`.end()`).
 - **Aprobaciones duplicadas**: el modelo a veces llama `request_approval` dos veces para la misma negociación. Fix: `request_approval` es idempotente por (conversación, tipo) — actualiza la pendiente existente en vez de crear una segunda.
+- **`\D` dentro de un template literal de JS**: `` `regexp_replace(c.phone, '\D', '', 'g')` `` se veía correcto, pero JavaScript silenciosamente convierte un escape no reconocido como `\D` en solo `D` dentro de un string entre backticks — el SQL que de verdad llegaba a Postgres buscaba la letra "D" literal, así que el match de teléfono entrante de WhatsApp nunca encontraba la conversación. Fix: usar una clase de caracteres (`'[^0-9]'`) que no necesita backslash. Encontrado probando el webhook con un payload real firmado, no por inspección de código — el bug era invisible leyendo el archivo.
 
 ## Qué falta para un piloto real (fuera de alcance de este V1)
 
-- **WhatsApp real (Etapa 5)**: requiere un número/WABA dedicado a este agente — no se puede reutilizar el del agente de soporte (`vps-assistant/n8n-agente-soporte`) sin arriesgar ese flujo en producción.
+- Un número de WhatsApp de **producción** (verificado ante Meta) — hoy funciona con el número de prueba gratuito de Meta, que solo puede escribirle a números verificados manualmente (máx. 5).
 - Autenticación real (hoy es un gate de contraseña compartida, sin usuarios).
 - Transacciones atómicas en Postgres para escrituras concurrentes (hoy son escrituras secuenciales, aceptable a escala de demo).
 - Aislamiento de RLS más allá de "todo bloqueado salvo el servidor" (suficiente porque el navegador nunca habla con la base directamente).
+- El webhook de WhatsApp procesa cada mensaje de forma síncrona antes de responder 200 a Meta (simple y suficiente para una conversación a la vez); con concurrencia real convendría pasar a una cola para no arriesgar el timeout/reintento de Meta en un turno con muchas llamadas a herramientas.

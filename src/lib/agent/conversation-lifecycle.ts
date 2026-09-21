@@ -2,6 +2,7 @@ import "server-only";
 import { sql } from "@/lib/db";
 import { startConversation } from "@/lib/agent/runtime";
 import { logAudit } from "@/lib/agent/audit";
+import { normalizePhone } from "@/lib/channel/phone";
 
 /**
  * "Iniciar conversación" is idempotent: if the opportunity already has an
@@ -43,4 +44,29 @@ export async function startConversationForOpportunity(opportunityId: string): Pr
   await startConversation(conversation.id);
 
   return conversation.id;
+}
+
+/**
+ * Routes an inbound real WhatsApp message to the right open conversation.
+ * Only matches conversations the agent (or a human) already started — a
+ * customer texting our WhatsApp number out of the blue, with no prior
+ * opportunity/conversation, is out of scope for this demo.
+ */
+export async function findOpenConversationByPhone(phone: string): Promise<string | null> {
+  const digits = normalizePhone(phone);
+  if (!digits) return null;
+
+  // '[^0-9]' rather than '\D': inside a JS template literal, `\D` cooks to
+  // just `D` (unrecognized escapes silently drop the backslash), so the
+  // SQL that used to reach Postgres was `regexp_replace(phone, 'D', ...)`
+  // — matching nothing, ever. A character class needs no backslash at all.
+  const [row] = await sql<Array<{ id: string }>>`
+    select conv.id
+    from agente_comercial.customers c
+    join agente_comercial.conversations conv on conv.customer_id = c.id and conv.ended_at is null
+    where regexp_replace(c.phone, '[^0-9]', '', 'g') = ${digits}
+    order by conv.started_at desc
+    limit 1
+  `;
+  return row?.id ?? null;
 }

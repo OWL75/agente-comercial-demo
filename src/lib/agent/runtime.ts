@@ -4,6 +4,7 @@ import { sql } from "@/lib/db";
 import { getAgentModel, getOpenAiClient } from "@/lib/agent/openai-client";
 import { getOpenAiToolDefinitions, getTool, type ToolContext } from "@/lib/agent/tools";
 import { logAudit } from "@/lib/agent/audit";
+import { isWhatsAppConfigured, sendWhatsAppMessage } from "@/lib/channel/whatsapp-client";
 
 const SYSTEM_PROMPT_BASE = `Eres el agente comercial autónomo de Nova Distribution, un distribuidor B2B de productos de cuidado personal. Hablas con clientes por WhatsApp en español, en tono consultivo y profesional, con mensajes cortos (como se escribe en WhatsApp, no párrafos de correo).
 
@@ -25,6 +26,7 @@ type ConversationContext = {
   customerId: string;
   opportunityId: string;
   customerName: string;
+  customerPhone: string | null;
   segment: string | null;
   reasonText: string | null;
   strategyText: string | null;
@@ -35,6 +37,7 @@ async function loadConversationContext(conversationId: string): Promise<Conversa
     select
       c.id as customer_id,
       c.name as customer_name,
+      c.phone as customer_phone,
       c.segment,
       o.id as opportunity_id,
       o.reason_text,
@@ -49,6 +52,7 @@ async function loadConversationContext(conversationId: string): Promise<Conversa
     customerId: row.customer_id,
     opportunityId: row.opportunity_id,
     customerName: row.customer_name,
+    customerPhone: row.customer_phone,
     segment: row.segment,
     reasonText: row.reason_text,
     strategyText: row.strategy_text,
@@ -180,16 +184,42 @@ async function executeAgentLoop(
     values (${conversationId}, 'outbound', 'agent', ${reply})
   `;
 
+  // Best-effort real send: a WhatsApp outage must never break the in-app
+  // conversation, which already has the message and keeps working either
+  // way — so failures are logged, not thrown.
+  if (isWhatsAppConfigured() && context.customerPhone && reply) {
+    try {
+      await sendWhatsAppMessage(context.customerPhone, reply);
+    } catch (err) {
+      await logAudit({
+        conversationId,
+        category: "system",
+        label: `No se pudo enviar el mensaje por WhatsApp real: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
   return reply;
 }
 
 export async function runAgentTurn(
   conversationId: string,
   customerMessage: string,
+  opts: { externalMessageId?: string } = {},
 ): Promise<{ reply: string }> {
+  if (opts.externalMessageId) {
+    const [existing] = await sql<Array<{ id: string }>>`
+      select id from agente_comercial.messages where external_message_id = ${opts.externalMessageId}
+    `;
+    // Meta retries webhook deliveries it didn't get a fast 200 for — without
+    // this guard a retry would re-run the whole agent turn and send a
+    // second reply to the same customer message.
+    if (existing) return { reply: "" };
+  }
+
   await sql`
-    insert into agente_comercial.messages (conversation_id, direction, sender, body)
-    values (${conversationId}, 'inbound', 'customer', ${customerMessage})
+    insert into agente_comercial.messages (conversation_id, direction, sender, body, external_message_id)
+    values (${conversationId}, 'inbound', 'customer', ${customerMessage}, ${opts.externalMessageId ?? null})
   `;
 
   const context = await loadConversationContext(conversationId);
