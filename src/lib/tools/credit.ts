@@ -3,9 +3,10 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { evaluateCredit } from "@/lib/policy/evaluate";
 import { getActivePolicy } from "@/lib/db/policies";
+import { uuidLike } from "@/lib/zod-helpers";
 
 export const getCreditStatusInput = z.object({
-  customerId: z.string().uuid(),
+  customerId: uuidLike,
   requestingIncreaseOrNew: z.boolean().default(false),
 });
 export type GetCreditStatusInput = z.infer<typeof getCreditStatusInput>;

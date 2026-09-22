@@ -1,9 +1,10 @@
 import "server-only";
 import { z } from "zod";
 import { sql } from "@/lib/db";
+import { uuidLike } from "@/lib/zod-helpers";
 
 export const getCustomerProfileInput = z.object({
-  customerId: z.string().uuid(),
+  customerId: uuidLike,
 });
 export type GetCustomerProfileInput = z.infer<typeof getCustomerProfileInput>;
 
@@ -19,7 +20,7 @@ export async function getCustomerProfile(input: GetCustomerProfileInput) {
 }
 
 export const getPurchaseHistoryInput = z.object({
-  customerId: z.string().uuid(),
+  customerId: uuidLike,
   limit: z.number().int().min(1).max(50).default(10),
 });
 export type GetPurchaseHistoryInput = z.infer<typeof getPurchaseHistoryInput>;
@@ -45,7 +46,7 @@ export async function getPurchaseHistory(input: GetPurchaseHistoryInput) {
 }
 
 export const getCustomerOpportunityInput = z.object({
-  customerId: z.string().uuid(),
+  customerId: uuidLike,
 });
 export type GetCustomerOpportunityInput = z.infer<typeof getCustomerOpportunityInput>;
 
@@ -64,8 +65,8 @@ export async function getCustomerOpportunity(input: GetCustomerOpportunityInput)
 }
 
 export const saveCustomerInsightInput = z.object({
-  conversationId: z.string().uuid(),
-  customerId: z.string().uuid(),
+  conversationId: uuidLike,
+  customerId: uuidLike,
   motivoInactividad: z.string().nullable().optional(),
   competidorMencionado: z.string().nullable().optional(),
   objecion: z.string().nullable().optional(),

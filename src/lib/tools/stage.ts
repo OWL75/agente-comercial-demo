@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { sql } from "@/lib/db";
 import type { OpportunityStatus } from "@/lib/db/opportunities";
+import { uuidLike } from "@/lib/zod-helpers";
 
 const CONVERSATION_STAGES = [
   "discovery",
@@ -25,7 +26,7 @@ const STAGE_TO_OPPORTUNITY_STATUS: Record<(typeof CONVERSATION_STAGES)[number], 
 };
 
 export const updateOpportunityStageInput = z.object({
-  conversationId: z.string().uuid(),
+  conversationId: uuidLike,
   stage: z.enum(CONVERSATION_STAGES),
   nextObjective: z
     .string()

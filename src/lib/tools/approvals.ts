@@ -2,10 +2,11 @@ import "server-only";
 import { z } from "zod";
 import { sql, toJsonb } from "@/lib/db";
 import { getActivePolicy } from "@/lib/db/policies";
+import { uuidLike } from "@/lib/zod-helpers";
 
 export const requestApprovalInput = z.object({
-  conversationId: z.string().uuid(),
-  customerId: z.string().uuid(),
+  conversationId: uuidLike,
+  customerId: uuidLike,
   type: z.enum(["discount", "credit", "delivery", "other"]),
   productSku: z.string().optional().describe("SKU del producto involucrado, si aplica."),
   quantity: z.number().int().positive().optional().describe("Cantidad involucrada, si aplica."),
@@ -123,7 +124,7 @@ export async function requestApproval(input: RequestApprovalInput) {
 }
 
 export const getApprovalResultInput = z.object({
-  approvalId: z.string().uuid(),
+  approvalId: uuidLike,
 });
 export type GetApprovalResultInput = z.infer<typeof getApprovalResultInput>;
 

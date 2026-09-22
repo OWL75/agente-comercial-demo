@@ -3,10 +3,11 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { getActivePolicy } from "@/lib/db/policies";
 import { evaluateDiscount, hasEnoughStock } from "@/lib/policy/evaluate";
+import { uuidLike } from "@/lib/zod-helpers";
 
 export const createSandboxOrderInput = z.object({
-  conversationId: z.string().uuid(),
-  customerId: z.string().uuid(),
+  conversationId: uuidLike,
+  customerId: uuidLike,
   items: z.array(z.object({ sku: z.string(), quantity: z.number().int().positive() })).min(1),
   discountPct: z.number().min(0).max(100).default(0),
   creditTerms: z.string(),
