@@ -3,6 +3,7 @@ import { verifyMetaSignature } from "@/lib/channel/verify-signature";
 import { findOpenConversationByPhone } from "@/lib/agent/conversation-lifecycle";
 import { runAgentTurn } from "@/lib/agent/runtime";
 import { logAudit } from "@/lib/agent/audit";
+import { z } from "zod";
 
 // Meta calls this once, when the webhook URL is registered in the app
 // dashboard, to prove we control it.
@@ -26,15 +27,20 @@ type WhatsAppMessage = {
   text?: { body: string };
 };
 
-type WhatsAppWebhookPayload = {
-  entry?: Array<{
-    changes?: Array<{
-      value?: {
-        messages?: WhatsAppMessage[];
-      };
-    }>;
-  }>;
-};
+const webhookPayloadSchema = z.object({
+  entry: z.array(z.object({
+    changes: z.array(z.object({
+      value: z.object({
+        metadata: z.object({ phone_number_id: z.string() }).optional(),
+        messages: z.array(z.object({
+          from: z.string().regex(/^\d{5,20}$/), id: z.string().min(1).max(512),
+          type: z.string(), text: z.object({ body: z.string().max(4096) }).optional(),
+        })).optional(),
+      }).optional(),
+    })).optional(),
+  })).optional(),
+});
+type WhatsAppWebhookPayload = z.infer<typeof webhookPayloadSchema>;
 
 function extractMessages(payload: WhatsAppWebhookPayload): WhatsAppMessage[] {
   const messages: WhatsAppMessage[] = [];
@@ -52,20 +58,29 @@ export async function POST(request: Request) {
   const rawBody = await request.text();
 
   const appSecret = process.env.WHATSAPP_APP_SECRET;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  if (!appSecret || !phoneNumberId) return new NextResponse("Webhook not configured", { status: 503 });
   if (appSecret) {
     const signature = request.headers.get("x-hub-signature-256");
     if (!verifyMetaSignature(rawBody, signature, appSecret)) {
       return new NextResponse("Invalid signature", { status: 401 });
     }
   }
-  // No app secret configured yet: accept unsigned requests so the webhook
-  // is usable while WHATSAPP_APP_SECRET is still pending — see README.
+  // Signed requests are required in every environment, including local tests.
 
   let payload: WhatsAppWebhookPayload;
   try {
-    payload = JSON.parse(rawBody);
+    payload = webhookPayloadSchema.parse(JSON.parse(rawBody));
   } catch {
     return new NextResponse("Invalid JSON", { status: 400 });
+  }
+
+  for (const entry of payload.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      if (change.value?.messages?.length && change.value.metadata?.phone_number_id !== phoneNumberId) {
+        return new NextResponse("Wrong destination", { status: 403 });
+      }
+    }
   }
 
   const messages = extractMessages(payload).filter((m) => m.type === "text" && m.text?.body);

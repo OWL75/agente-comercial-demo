@@ -4,7 +4,9 @@ import { COOKIE_NAME, sessionValueForPassword } from "@/lib/auth";
 export async function POST(request: Request) {
   const expectedPassword = process.env.DEMO_ACCESS_PASSWORD;
   if (!expectedPassword) {
-    return NextResponse.json({ ok: true });
+    return process.env.NODE_ENV === "production"
+      ? NextResponse.json({ message: "Acceso no configurado." }, { status: 503 })
+      : NextResponse.json({ ok: true });
   }
 
   const { password } = (await request.json().catch(() => ({}))) as { password?: string };

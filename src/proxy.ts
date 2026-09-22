@@ -4,7 +4,11 @@ import { COOKIE_NAME, expectedSessionValue } from "@/lib/auth";
 export async function proxy(request: NextRequest) {
   // No DEMO_ACCESS_PASSWORD configured (e.g. local dev without .env.local yet) — don't lock people out.
   const expected = await expectedSessionValue();
-  if (!expected) return NextResponse.next();
+  if (!expected) {
+    return process.env.NODE_ENV === "production"
+      ? new NextResponse("Acceso no configurado", { status: 503 })
+      : NextResponse.next();
+  }
 
   const session = request.cookies.get(COOKIE_NAME)?.value;
   if (session === expected) return NextResponse.next();

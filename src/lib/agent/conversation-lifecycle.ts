@@ -1,7 +1,6 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { startConversation } from "@/lib/agent/runtime";
-import { logAudit } from "@/lib/agent/audit";
 import { normalizePhone } from "@/lib/channel/phone";
 
 /**
@@ -10,40 +9,33 @@ import { normalizePhone } from "@/lib/channel/phone";
  * second parallel thread with the same customer.
  */
 export async function startConversationForOpportunity(opportunityId: string): Promise<string> {
-  const [existing] = await sql<Array<{ id: string }>>`
-    select id from agente_comercial.conversations
-    where opportunity_id = ${opportunityId} and ended_at is null
-    order by started_at desc
-    limit 1
-  `;
-  if (existing) return existing.id;
-
-  const [opportunity] = await sql<Array<{ customer_id: string }>>`
-    select customer_id from agente_comercial.opportunities where id = ${opportunityId}
-  `;
-  if (!opportunity) throw new Error(`Oportunidad ${opportunityId} no encontrada`);
-
-  const [conversation] = await sql<Array<{ id: string }>>`
-    insert into agente_comercial.conversations (opportunity_id, customer_id, channel, stage)
-    values (${opportunityId}, ${opportunity.customer_id}, 'whatsapp_simulado', 'discovery')
-    returning id
-  `;
-
-  await sql`
-    update agente_comercial.opportunities
-    set status = 'contactada', updated_at = now()
-    where id = ${opportunityId} and status = 'detectada'
-  `;
-
-  await logAudit({
-    conversationId: conversation.id,
-    category: "system",
-    label: "Conversación iniciada por el agente",
+  const result = await sql.begin(async (tx) => {
+    const [opportunity] = await tx`
+      select customer_id, status from agente_comercial.opportunities where id = ${opportunityId} for update
+    `;
+    if (!opportunity) throw new Error("Oportunidad no encontrada.");
+    if (opportunity.status === "cerrada" || opportunity.status === "perdida") throw new Error("La oportunidad ya terminó.");
+    const [suppression] = await tx`select id from agente_comercial.customer_insights
+      where customer_id = ${opportunity.customer_id} and opt_out = true limit 1`;
+    if (suppression) throw new Error("Cliente excluido por opt-out.");
+    const [existing] = await tx`
+      select id from agente_comercial.conversations where opportunity_id = ${opportunityId} and ended_at is null
+      order by started_at desc limit 1
+    `;
+    if (existing) return { id: existing.id as string, created: false };
+    const [conversation] = await tx`
+      insert into agente_comercial.conversations (opportunity_id, customer_id, channel, stage)
+      values (${opportunityId}, ${opportunity.customer_id}, 'whatsapp_simulado', 'discovery') returning id
+    `;
+    await tx`update agente_comercial.opportunities set status = 'contactada', updated_at = now()
+      where id = ${opportunityId} and status in ('detectada', 'preparada')`;
+    await tx`insert into agente_comercial.audit_log (conversation_id, category, label, payload)
+      values (${conversation.id}, 'system', 'Conversación iniciada por el agente', ${tx.json({})})`;
+    return { id: conversation.id as string, created: true };
   });
-
-  await startConversation(conversation.id);
-
-  return conversation.id;
+  // OpenAI and WhatsApp calls deliberately remain outside the transaction.
+  if (result.created) await startConversation(result.id);
+  return result.id;
 }
 
 /**

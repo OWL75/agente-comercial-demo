@@ -3,6 +3,8 @@ import { sql, toJsonb } from "@/lib/db";
 import { getApprovalDetail } from "@/lib/db/approvals";
 import { resumeAfterHumanDecision } from "@/lib/agent/runtime";
 import { logAudit } from "@/lib/agent/audit";
+import { getActivePolicy } from "@/lib/db/policies";
+import { assertContactAllowed } from "@/lib/agent/contact-permission";
 
 const VALUE_KEY_BY_TYPE: Record<string, string> = {
   discount: "pct",
@@ -27,6 +29,8 @@ export async function decideApproval(
 ): Promise<{ conversationId: string }> {
   const approval = await getApprovalDetail(approvalId);
   if (!approval) throw new Error(`Aprobación ${approvalId} no encontrada`);
+  if (!["approve", "modify", "reject"].includes(action)) throw new Error("Acción inválida.");
+  await assertContactAllowed(approval.customerId);
   if (approval.status !== "pending") {
     throw new Error(`Esta aprobación ya fue decidida (${approval.status}).`);
   }
@@ -44,19 +48,31 @@ export async function decideApproval(
     const requested = approval.requestedValue[key];
     const value =
       action === "modify" ? modifiedValue : typeof requested === "number" ? requested : Number(requested);
-    if (value == null || Number.isNaN(value)) throw new Error("Falta el valor a aprobar.");
+    if (value == null || !Number.isFinite(value) || requested == null) throw new Error("Falta el valor a aprobar.");
+    if (approval.type === "discount") {
+      const policy = await getActivePolicy();
+      if (!policy || value < 0 || value > policy.config.discount.approvalMaxPct) {
+        throw new Error("Descuento fuera de la política vigente.");
+      }
+    } else if (value <= 0 || (approval.type === "delivery" && !Number.isSafeInteger(value))) {
+      throw new Error("El valor aprobado debe ser positivo y la entrega debe expresarse en horas enteras.");
+    }
     decidedValue = { [key]: value };
     decisionSummary = `Se ${action === "modify" ? "APROBÓ una versión MODIFICADA" : "APROBÓ"} la solicitud de ${approval.type}: ${describeDecidedValue(approval.type, value)}.`;
   }
 
-  await sql`
+  const [decided] = await sql`
     update agente_comercial.approvals
     set status = ${status},
         decided_value = ${toJsonb(decidedValue)},
         decided_by = 'Gerente comercial',
         decided_at = now()
-    where id = ${approvalId}
+    where id = ${approvalId} and status = 'pending'
+      and requested_value = ${toJsonb(approval.requestedValue)}
+      and context = ${toJsonb(approval.context)}
+    returning id
   `;
+  if (!decided) throw new Error("La solicitud cambió o ya fue decidida. Recarga antes de decidir.");
 
   await logAudit({
     conversationId: approval.conversationId,
