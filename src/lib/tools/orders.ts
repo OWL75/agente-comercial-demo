@@ -46,7 +46,7 @@ export async function createSandboxOrder(input: CreateSandboxOrderInput) {
   // Re-fetch price and stock now — never reuse a figure read earlier in the
   // conversation, since it may be stale by the time the order is created.
   const products = await sql`
-    select sku, name, unit_price, stock
+    select id, sku, name, unit_price, stock
     from agente_comercial.products
     where sku in ${sql(input.items.map((i) => i.sku))}
   `;
