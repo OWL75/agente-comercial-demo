@@ -65,34 +65,43 @@ export async function createSandboxOrder(input: CreateSandboxOrderInput) {
   const subtotal = lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
   const total = subtotal * (1 - input.discountPct / 100);
 
-  const [order] = await sql`
-    insert into agente_comercial.orders
-      (conversation_id, customer_id, subtotal, discount_pct, total, credit_terms, delivery_option, status)
-    values (
-      ${input.conversationId}, ${input.customerId}, ${subtotal}, ${input.discountPct}, ${total},
-      ${input.creditTerms}, ${input.deliveryOption}, 'sandbox_created'
-    )
-    returning id
-  `;
-
-  for (const line of lines) {
-    await sql`
-      insert into agente_comercial.order_items (order_id, product_id, quantity, unit_price)
-      values (${order.id}, ${line.productId}, ${line.quantity}, ${line.unitPrice})
+  // Atomic: a failure on any step (e.g. the order_items insert) must not
+  // leave a committed `orders` row with no line items — that happened for
+  // real here once (an undefined product id crashed the items loop after
+  // the order row had already been inserted), and silently inflated the
+  // "ventas recuperadas" KPI with a phantom sale.
+  const orderId = await sql.begin(async (tx) => {
+    const [order] = await tx`
+      insert into agente_comercial.orders
+        (conversation_id, customer_id, subtotal, discount_pct, total, credit_terms, delivery_option, status)
+      values (
+        ${input.conversationId}, ${input.customerId}, ${subtotal}, ${input.discountPct}, ${total},
+        ${input.creditTerms}, ${input.deliveryOption}, 'sandbox_created'
+      )
+      returning id
     `;
-  }
 
-  await sql`
-    update agente_comercial.opportunities
-    set status = 'cerrada', updated_at = now()
-    where id = (select opportunity_id from agente_comercial.conversations where id = ${input.conversationId})
-  `;
-  await sql`
-    update agente_comercial.conversations set ended_at = now() where id = ${input.conversationId}
-  `;
+    for (const line of lines) {
+      await tx`
+        insert into agente_comercial.order_items (order_id, product_id, quantity, unit_price)
+        values (${order.id}, ${line.productId}, ${line.quantity}, ${line.unitPrice})
+      `;
+    }
+
+    await tx`
+      update agente_comercial.opportunities
+      set status = 'cerrada', updated_at = now()
+      where id = (select opportunity_id from agente_comercial.conversations where id = ${input.conversationId})
+    `;
+    await tx`
+      update agente_comercial.conversations set ended_at = now() where id = ${input.conversationId}
+    `;
+
+    return order.id;
+  });
 
   return {
-    orderId: order.id,
+    orderId,
     subtotal,
     discountPct: input.discountPct,
     total,
