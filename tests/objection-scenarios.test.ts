@@ -153,7 +153,8 @@ const t3 = [
   say("Gracias. Tenemos stock para ese volumen y podemos acercarnos a ese precio. ¿Qué es lo que más te preocupa para volver a probar?"),
 ];
 const t4 = [
-  calls(save({ objecion: "servicio: le preocupa otro atraso en la entrega" }), tool("get_delivery_options", { sku: SKU }), tool("get_inventory", { sku: SKU })),
+  calls(save({ objecion: "servicio: le preocupa otro atraso en la entrega" }), tool("get_delivery_options", { sku: SKU }), tool("get_inventory", { sku: SKU }),
+    tool("prepare_verified_offer", { sku: SKU, quantity: 50, discountPct: 0, deliveryHours: 24 })),
   say("Lo entiendo. Hoy tenemos 820 unidades y el producto califica para entrega express en 24 horas. ¿Te serviría probar con un pedido?"),
 ];
 const t5 = (pct = 4) => [
@@ -162,10 +163,11 @@ const t5 = (pct = 4) => [
     tool("get_inventory", { sku: SKU }),
     tool("get_credit_status"),
     tool("get_discount_policy", { requestedPct: pct }),
+    tool("prepare_verified_offer", { sku: SKU, quantity: 50, discountPct: pct, deliveryHours: 24 }),
     save({ intencionCompra: "Pedido de prueba de 50 unidades", condicionSolicitada: "Entrega 24 h y pago a 30 días", resultado: "en_negociacion" }),
     stage("closing", "Obtener confirmación explícita"),
   ),
-  say(`Te propongo 50 Shampoo Professional 1L a $18.50 con ${pct}% de descuento, entrega en 24 horas y tu crédito de 30 días. ¿Lo confirmas?`),
+  say(`La oferta final es: 50 Shampoo Professional 1L a $17.76 por unidad con ${pct}% de descuento, total $888.00, entrega en 24 horas y pago a 30 días. ¿Confirmas el pedido?`),
 ];
 const t6 = (pct = 4) => [
   calls(tool("get_inventory", { sku: SKU }), tool("create_sandbox_order", { items: [{ sku: SKU, quantity: 50 }], discountPct: pct, creditTerms: "30 días", deliveryHours: 24 })),
@@ -213,16 +215,18 @@ describe("main objection scenario through the real runtime", () => {
       say("Listo, pedido creado."),
     ];
     const trace = await play(MAIN_OBJECTION_SCENARIO, [opening, t1, t2, t3, t4, premature], MAIN_OBJECTION_SCENARIO.messages.slice(0, 5));
-    expect(trace.turns.at(-1)!.orders).toHaveLength(1);
-    expect(failing(MAIN_OBJECTION_SCENARIO.evaluate(trace, today))).toEqual(expect.arrayContaining([
-      "No creó el pedido antes de la confirmación explícita",
-      "Creó el pedido después del mensaje de confirmación",
-    ]));
+    expect(trace.turns.at(-1)!.orders).toHaveLength(0);
+    expect(trace.turns.at(-1)!.failedCalls).toEqual([
+      { tool: "create_sandbox_order", error: expect.stringContaining("confirmación explícita") },
+    ]);
   });
 
   it("flags conceding the maximum autonomous discount when less reaches the target price", async () => {
     const trace = await play(MAIN_OBJECTION_SCENARIO, [opening, t1, t2, t3, t4, t5(5), t6(5)]);
-    expect(failing(MAIN_OBJECTION_SCENARIO.evaluate(trace, today))).toEqual(["El descuento quedó dentro de la autonomía sin regalar margen"]);
+    expect(trace.turns.at(-1)!.orders).toHaveLength(0);
+    expect(trace.turns.at(-1)!.failedCalls).toEqual([
+      { tool: "create_sandbox_order", error: expect.stringContaining("oferta verificada") },
+    ]);
   });
 
   it("flags an unnecessary human approval for a discount inside autonomy", async () => {
@@ -231,7 +235,10 @@ describe("main objection scenario through the real runtime", () => {
       ...t5(),
     ];
     const trace = await play(MAIN_OBJECTION_SCENARIO, [opening, t1, t2, t3, t4, withApproval, t6()]);
-    expect(failing(MAIN_OBJECTION_SCENARIO.evaluate(trace, today))).toContain("No creó aprobaciones");
+    expect(trace.turns.flatMap((turn) => turn.failedCalls)).toContainEqual({
+      tool: "request_approval", error: expect.stringContaining("no requiere aprobación"),
+    });
+    expectAllPass(MAIN_OBJECTION_SCENARIO.evaluate(trace, today));
   });
 });
 
@@ -338,8 +345,8 @@ describe("additional objection scenarios through the real runtime", () => {
 
     const { rows: [approval] } = await database.query<{ id: string }>("select id from agente_comercial.approvals");
     h.script = [
-      calls(tool("create_sandbox_order", { items: [{ sku: SKU, quantity: 200 }], discountPct: 8, creditTerms: "30 días", deliveryHours: 48 })),
-      say("¡Buenas noticias! Quedó aprobado el 8%. ¿Confirmas las 200 unidades?"),
+      calls(tool("prepare_verified_offer", { sku: SKU, quantity: 200, discountPct: 8, deliveryHours: 48 }), stage("closing")),
+      say("¡Buenas noticias! La oferta final quedó en 200 unidades a $17.02 por unidad con 8%, total $3404.00 y entrega estándar. ¿Confirmas las 200 unidades?"),
     ];
     await decideApproval(approval.id, "approve");
     expect((await database.query("select id from agente_comercial.orders")).rows).toHaveLength(0);
@@ -384,7 +391,7 @@ describe("additional objection scenarios through the real runtime", () => {
     const trace = await play(s, [
       [calls(save({ productoInteres: "Shampoo Professional 1L", cantidad: 50, condicionSolicitada: "Entrega 24 h, crédito 30 días" }),
         tool("get_product_price", { sku: SKU }), tool("get_inventory", { sku: SKU }), tool("get_delivery_options", { sku: SKU }),
-        tool("get_credit_status"), stage("closing")),
+        tool("get_credit_status"), tool("prepare_verified_offer", { sku: SKU, quantity: 50, discountPct: 0, deliveryHours: 24 }), stage("closing")),
         say("50 unidades a $18.50, total $925, entrega en 24 horas y crédito a 30 días. ¿Lo confirmas?")],
       [calls(tool("create_sandbox_order", { items: [{ sku: SKU, quantity: 50 }], discountPct: 0, creditTerms: "30 días", deliveryHours: 24 })),
         say("Perfecto, quedo atento a lo que te diga tu socio.")],
@@ -417,5 +424,104 @@ describe("turn guards and insight robustness", () => {
     expect(result).toMatchObject({ rejected: [expect.stringContaining("proximaFecha")] });
     const { rows } = await database.query("select competidor_mencionado, proxima_accion, proxima_fecha from agente_comercial.customer_insights");
     expect(rows).toEqual([{ competidor_mencionado: "Proveedor X", proxima_accion: "Llamar", proxima_fecha: null }]);
+  });
+});
+
+describe("regression: exact Empresa Demo price and delivery conversation", () => {
+  it("waits for delivery approval, asks for a new explicit confirmation, then creates the order", async () => {
+    await play(
+      MAIN_OBJECTION_SCENARIO,
+      [opening, t1, t2],
+      MAIN_OBJECTION_SCENARIO.messages.slice(0, 2),
+    );
+    // Reproduce the historical pending card from the real trace. New code
+    // refuses to create this unnecessary approval for an express-eligible SKU,
+    // but it must still respect an already-open human decision.
+    await database.query(
+      `insert into agente_comercial.approvals
+        (conversation_id, customer_id, type, status, requested_value, context)
+       values ($1, $2, 'delivery', 'pending', $3, $4)`,
+      [conversationId, customerId,
+        JSON.stringify({ hours: 24, quantity: 50, productSku: SKU }),
+        JSON.stringify({ unitPrice: 18.5, policyVersion: 1 })],
+    );
+    await database.query(
+      "update agente_comercial.conversations set stage='awaiting_approval' where id=$1",
+      [conversationId],
+    );
+    const pendingOfferTurn = [
+      calls(
+        save({
+          productoInteres: "Shampoo Professional 1L (CAP-001)", cantidad: 50,
+          precioObjetivo: 17.75, condicionSolicitada: "Entrega al día siguiente",
+          motivoInactividad: "Mejor precio y una entrega anterior tardía",
+        }),
+        tool("get_product_price", { sku: SKU }),
+        tool("get_discount_policy", { requestedPct: 4 }),
+        tool("prepare_verified_offer", { sku: SKU, quantity: 50, discountPct: 4, deliveryHours: 24 }),
+      ),
+      say("Entiendo que actualmente pagas aproximadamente $17.75. La entrega en 24 horas requiere aprobación y ya la solicité; te confirmo cuando tenga respuesta."),
+    ];
+    const trustTurn = [
+      calls(save({ objecion: "confianza: teme otro atraso en la entrega" })),
+      say("Entiendo el impacto que tuvo el atraso anterior. Prefiero esperar la validación antes de comprometer una fecha."),
+    ];
+    const conditionalAttempt = [
+      calls(
+        tool("create_sandbox_order", {
+          items: [{ sku: SKU, quantity: 50 }], discountPct: 4,
+          creditTerms: "30 días", deliveryHours: 24,
+        }),
+        stage("closing"),
+      ),
+      say("Confirmé la entrega express en 24 horas. ¿Confirmas el pedido?"),
+    ];
+
+    h.script = [pendingOfferTurn, trustTurn, conditionalAttempt].flat();
+    const trace = await runTracedConversation(conversationId, {
+      opening: false,
+      messages: MAIN_OBJECTION_SCENARIO.messages.slice(2, 5),
+    });
+    expect(h.script).toHaveLength(0);
+    const conditional = trace.turns.at(-1)!;
+    expect(conditional.customerMessage).toContain("podemos probar");
+    expect(conditional.orders).toHaveLength(0);
+    expect(conditional.stage).toBe("awaiting_approval");
+    expect(conditional.failedCalls).toEqual(expect.arrayContaining([
+      { tool: "create_sandbox_order", error: expect.stringContaining("duda") },
+      { tool: "update_opportunity_stage", error: expect.stringContaining("awaiting_approval") },
+    ]));
+    expect(conditional.reply).toContain("todavía requiere aprobación");
+
+    const { rows: [approval] } = await database.query<{ id: string }>(
+      "select id from agente_comercial.approvals where type='delivery' and status='pending'",
+    );
+    h.script = [
+      calls(
+        tool("prepare_verified_offer", { sku: SKU, quantity: 50, discountPct: 4, deliveryHours: 24 }),
+        stage("closing", "Obtener una confirmación explícita nueva"),
+      ),
+      say("La entrega en 24 horas fue aprobada. Oferta final:\n\n* 50 unidades\n* 4% de descuento\n* $17.76 por unidad\n* Total $888.00\n* Pago a 30 días\n\n¿Confirmas el pedido con estas condiciones?"),
+    ];
+    await decideApproval(approval.id, "approve");
+    expect((await database.query("select id from agente_comercial.orders")).rows).toHaveLength(0);
+    const { rows: [afterApproval] } = await database.query<{ body: string }>(
+      "select body from agente_comercial.messages where sender='agent' order by created_at desc limit 1",
+    );
+    expect(afterApproval.body).toContain("¿Confirmas el pedido");
+    expect(afterApproval.body).toContain("$17.76");
+    expect(afterApproval.body).toContain("$888.00");
+
+    h.script = [
+      calls(tool("create_sandbox_order", {
+        items: [{ sku: SKU, quantity: 50 }], discountPct: 4,
+        creditTerms: "30 días", deliveryHours: 24,
+      })),
+      say("Listo, pedido registrado con entrega aprobada en 24 horas."),
+    ];
+    await runAgentTurn(conversationId, "De acuerdo. Confirmo las 50 unidades con esas condiciones.");
+    expect((await database.query(
+      "select subtotal, discount_pct, total, delivery_option from agente_comercial.orders",
+    )).rows).toEqual([{ subtotal: "925", discount_pct: "4", total: "888", delivery_option: "24 horas" }]);
   });
 });

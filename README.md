@@ -5,6 +5,7 @@ Demo funcional de SISTECOMP para mostrar en reuniones comerciales: un agente que
 ## Fase 2.1 — demo comercial repetible
 
 Controles y límites de esta entrega: [docs/FASE_2.md](docs/FASE_2.md).
+Corrección de oferta, aprobaciones y cierre: [docs/FASE_2_OBJECTION_FIXES.md](docs/FASE_2_OBJECTION_FIXES.md).
 El pedido sigue siendo sandbox y no escribe en el ERP. La app incluye un modo de preparación para reuniones en `/demo`.
 
 ## Stack

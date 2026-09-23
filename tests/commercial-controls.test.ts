@@ -40,6 +40,18 @@ const order = () => ({ customerId, conversationId, items: [{ sku: "CAP-001", qua
 const request = () => ({ customerId, conversationId, type: "discount" as const, productSku: "CAP-001", quantity: 200,
   requestedPct: 8, reason: "Precio", agentRecommendation: "Aprobar" });
 
+async function presentOffer(input = order()) {
+  const item = input.items[0];
+  await database.query(
+    `insert into agente_comercial.audit_log (conversation_id, category, label, payload)
+     values ($1, 'policy_check', 'Oferta verificada presentada para confirmación', $2)`,
+    [conversationId, JSON.stringify({ offer: {
+      status: "ready", sku: item.sku, quantity: item.quantity,
+      discountPct: input.discountPct, deliveryHours: input.deliveryHours,
+    } })],
+  );
+}
+
 beforeAll(async () => {
   await database.exec(await readFile(new URL("./fixtures/demo-schema.sql", import.meta.url), "utf8"));
 }, 30000);
@@ -51,6 +63,7 @@ beforeEach(async () => {
   await database.query("insert into agente_comercial.conversations (id, customer_id, opportunity_id) values ($1, $2, $3)", [conversationId, customerId, opportunityId]);
   await database.exec("insert into agente_comercial.products (sku,name,unit_price,stock) values ('CAP-001','Shampoo',18.50,820), ('CAP-005','Mascarilla',13.40,280)");
   await database.query("insert into agente_comercial.commercial_policies (version,config) values (1,$1)", [JSON.stringify(policy)]);
+  await presentOffer();
 });
 afterAll(async () => { await database.close(); });
 
@@ -87,7 +100,9 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
     await database.exec("update agente_comercial.customers set credit_available=100");
     await expect(createSandboxOrder(order())).rejects.toThrow("Crédito");
     await database.exec("update agente_comercial.customers set credit_available=14500");
-    await expect(createSandboxOrder({ ...order(), deliveryHours: 12 })).rejects.toThrow("entrega");
+    const extraordinary = { ...order(), deliveryHours: 12 };
+    await presentOffer(extraordinary);
+    await expect(createSandboxOrder(extraordinary)).rejects.toThrow("entrega");
   });
   it("rolls back the order and status if a line insert fails", async () => {
     await database.exec("alter table agente_comercial.order_items add constraint test_failure check (quantity < 200)");
@@ -105,18 +120,29 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
     expect(second.approvalId).toBe(first.approvalId);
     await decideApproval(first.approvalId, "approve");
     await expect(decideApproval(first.approvalId, "reject")).rejects.toThrow("ya fue decidida");
+    await presentOffer({ ...order(), discountPct: 8 });
     expect((await createSandboxOrder({ ...order(), discountPct: 8 })).total).toBe(3404);
   });
   it("does not accept an approval for another quantity", async () => {
     const approval = await requestApproval(request());
     await decideApproval(approval.approvalId, "approve");
-    await expect(createSandboxOrder({ ...order(), discountPct: 8, items: [{ sku: "CAP-001", quantity: 201 }] })).rejects.toThrow("aprobación");
+    const changed = { ...order(), discountPct: 8, items: [{ sku: "CAP-001", quantity: 201 }] };
+    await presentOffer(changed);
+    await expect(createSandboxOrder(changed)).rejects.toThrow("aprobación");
   });
   it("does not approve out-of-policy modifications or requests", async () => {
     await expect(requestApproval({ ...request(), requestedPct: 15 })).rejects.toThrow("política");
     const approval = await requestApproval(request());
     await expect(decideApproval(approval.approvalId, "modify", 15)).rejects.toThrow("política");
     expect((await getApprovalResult({ approvalId: approval.approvalId, conversationId })).status).toBe("pending");
+  });
+  it("refuses unnecessary discount and delivery approvals", async () => {
+    await expect(requestApproval({ ...request(), requestedPct: 4 })).rejects.toThrow("no requiere aprobación");
+    await database.exec("update agente_comercial.products set express_eligible=true where sku='CAP-001'");
+    await expect(requestApproval({
+      customerId, conversationId, type: "delivery", productSku: "CAP-001", quantity: 200,
+      requestedDeliveryHours: 24, reason: "Entrega", agentRecommendation: "Aprobar",
+    })).rejects.toThrow("no requiere aprobación");
   });
   it("does not leak approval results across conversations", async () => {
     const approval = await requestApproval(request());
