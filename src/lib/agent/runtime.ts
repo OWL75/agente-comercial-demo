@@ -10,6 +10,8 @@ import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
 import type { FollowUpStep } from "@/lib/agent/follow-up-sequence";
 import { buildSystemPrompt, type AgentTurnOptions } from "@/lib/agent/system-prompt";
 import type { TurnTrigger } from "@/lib/agent/order-guard";
+import type { VerifiedOfferResult } from "@/lib/tools/offers";
+import { commercialReplyViolations, guardedFallback, presentsFinalVerifiedOffer } from "@/lib/agent/commercial-reply-guard";
 
 type TurnOptions = AgentTurnOptions & { trigger: TurnTrigger; customerMessage?: string };
 
@@ -96,6 +98,8 @@ async function executeAgentLoop(
     customerMessage: opts.customerMessage,
   };
   const instructions = buildSystemPrompt(context, opts);
+  let verifiedOffer: VerifiedOfferResult | null = null;
+  let orderCreated = false;
 
   let response = await client.responses.create({ model, instructions, input, tools });
 
@@ -128,6 +132,8 @@ async function executeAgentLoop(
           const validated = tool.schema.parse(argsWithContext);
           const result = await tool.execute(validated, toolContext);
           outputPayload = result;
+          if (tool.name === "prepare_verified_offer") verifiedOffer = result as VerifiedOfferResult;
+          if (tool.name === "create_sandbox_order") orderCreated = true;
           await logAudit({
             conversationId,
             category: "tool_call",
@@ -157,13 +163,45 @@ async function executeAgentLoop(
     response = await client.responses.create({ model, instructions, input, tools });
   }
 
-  const reply = toWhatsAppText(response.output_text ?? "");
+  let reply = toWhatsAppText(response.output_text ?? "");
   if (await isCustomerSuppressed(context.customerId)) return "";
+
+  const [pendingApproval] = await sql`
+    select id from agente_comercial.approvals
+    where conversation_id = ${conversationId} and status = 'pending' limit 1
+  `;
+  const violations = commercialReplyViolations({
+    reply,
+    verifiedOffer,
+    hasPendingApproval: !!pendingApproval,
+    orderCreated,
+  });
+  let presentedVerifiedOffer = false;
+  if (violations.length) {
+    await logAudit({
+      conversationId,
+      category: "system",
+      label: "Respuesta comercial bloqueada por verificación determinística",
+      payload: { violations },
+    });
+    reply = guardedFallback(!!pendingApproval);
+  } else presentedVerifiedOffer = presentsFinalVerifiedOffer(reply, verifiedOffer);
 
   await sql`
     insert into agente_comercial.messages (conversation_id, direction, sender, body)
     values (${conversationId}, 'outbound', 'agent', ${reply})
   `;
+
+  // Record presentation only after the exact customer-visible message exists.
+  // create_sandbox_order uses this audit row as its server-side precondition.
+  if (presentedVerifiedOffer) {
+    await logAudit({
+      conversationId,
+      category: "policy_check",
+      label: "Oferta verificada presentada para confirmación",
+      payload: { offer: verifiedOffer },
+    });
+  }
 
   // Best-effort real send: a WhatsApp outage must never break the in-app
   // conversation, which already has the message and keeps working either

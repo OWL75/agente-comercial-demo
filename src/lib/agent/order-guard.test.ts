@@ -25,6 +25,9 @@ describe("order guard", () => {
     "No confirmo todavía.",
     "Todavía no, espera.",
     "No hagas el pedido aún.",
+    "Si realmente pueden entregar en 24 horas, podríamos probar con 50 unidades.",
+    "Podemos probar nuevamente con 50 unidades.",
+    "Me interesan 50 unidades con esas condiciones.",
   ])("blocks a hesitant or negated reply: %s", (message) => {
     expect(explainNonConfirmation(message)).not.toBeNull();
     expect(() => assertOrderAllowed({ trigger: "customer_message", customerMessage: message })).toThrow("No se creó el pedido");

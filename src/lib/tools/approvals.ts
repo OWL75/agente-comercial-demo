@@ -3,6 +3,7 @@ import { z } from "zod";
 import { sql, toJsonb } from "@/lib/db";
 import { getActivePolicy } from "@/lib/db/policies";
 import { uuidLike } from "@/lib/zod-helpers";
+import { evaluateDelivery, evaluateDiscount } from "@/lib/policy/evaluate";
 
 export const requestApprovalInput = z.object({
   conversationId: uuidLike,
@@ -51,13 +52,29 @@ export async function requestApproval(input: RequestApprovalInput) {
     `;
     if (!customer) throw new Error(`Cliente ${input.customerId} no encontrado`);
 
-    let product: { sku: string; name: string; unitPrice: number; stock: number } | null = null;
+    let product: { sku: string; name: string; unitPrice: number; stock: number; expressEligible: boolean } | null = null;
     if (input.productSku) {
-      const [p] = await tx<Array<{ sku: string; name: string; unit_price: string; stock: number }>>`
-        select sku, name, unit_price, stock from agente_comercial.products where sku = ${input.productSku}
+      const [p] = await tx<Array<{ sku: string; name: string; unit_price: string; stock: number; express_eligible: boolean }>>`
+        select sku, name, unit_price, stock, express_eligible
+        from agente_comercial.products where sku = ${input.productSku}
       `;
       if (!p) throw new Error(`Producto con SKU "${input.productSku}" no encontrado`);
-      product = { sku: p.sku, name: p.name, unitPrice: Number(p.unit_price), stock: p.stock };
+      product = {
+        sku: p.sku, name: p.name, unitPrice: Number(p.unit_price), stock: p.stock,
+        expressEligible: p.express_eligible === true,
+      };
+    }
+
+    if (input.type === "discount" &&
+        evaluateDiscount(input.requestedPct!, policy.config.discount).decision !== "requires_approval") {
+      throw new Error("Este descuento no requiere aprobación humana; usa la decisión de la política.");
+    }
+    if (input.type === "delivery" && product &&
+        evaluateDelivery(input.requestedDeliveryHours!, product.expressEligible, policy.config.delivery).decision !== "requires_approval") {
+      throw new Error("Esta entrega no requiere aprobación humana para el producto indicado.");
+    }
+    if (input.type === "credit" && !policy.config.credit.increaseRequiresApproval) {
+      throw new Error("El aumento de crédito no requiere aprobación según la política vigente.");
     }
 
     // Everything numeric here is re-derived from real data at the moment the

@@ -4,6 +4,7 @@ import { sql } from "@/lib/db";
 import type { CommercialPolicyConfig } from "@/lib/db/policies";
 import { aggregateItems, moneyTotals, validateOrderConditions, type ScopedApproval } from "@/lib/policy/order-validation";
 import { uuidLike } from "@/lib/zod-helpers";
+import { smallestNaturalDiscount } from "@/lib/policy/verified-offer";
 
 export const createSandboxOrderInput = z.object({
   conversationId: uuidLike,
@@ -55,7 +56,36 @@ export async function createSandboxOrder(rawInput: CreateSandboxOrderInput) {
       return { ...item, productId: product.id as string, name: product.name as string,
         unitPrice: Number(product.unit_price), expressEligible: product.express_eligible === true };
     });
+    const [presented] = await tx<Array<{ payload: { offer?: {
+      status?: string; sku?: string; quantity?: number; discountPct?: number; deliveryHours?: number;
+    } } }>>`
+      select payload from agente_comercial.audit_log
+      where conversation_id = ${input.conversationId}
+        and category = 'policy_check'
+        and label = 'Oferta verificada presentada para confirmación'
+      order by created_at desc, id desc limit 1
+    `;
+    const offer = presented?.payload?.offer;
+    if (!offer || offer.status !== "ready" || lines.length !== 1 ||
+        offer.sku !== lines[0].sku || offer.quantity !== lines[0].quantity ||
+        offer.discountPct !== input.discountPct || offer.deliveryHours !== input.deliveryHours) {
+      throw new Error("No existe una oferta verificada y presentada que coincida con este pedido. Prepara la oferta, preséntala y pide confirmación antes de crear el pedido.");
+    }
     const { subtotal, total } = moneyTotals(lines, input.discountPct);
+    const [insight] = await tx<Array<{ precio_objetivo: string | null }>>`
+      select precio_objetivo from agente_comercial.customer_insights
+      where conversation_id = ${input.conversationId}
+    `;
+    if (insight?.precio_objetivo != null && lines.length === 1) {
+      const recommended = smallestNaturalDiscount(
+        lines[0].unitPrice,
+        Number(insight.precio_objetivo),
+        policy.config.discount.autoMaxPct,
+      );
+      if (recommended !== null && input.discountPct > recommended) {
+        throw new Error(`Existe un descuento natural menor (${recommended}%) que alcanza el precio objetivo; no se regalará margen.`);
+      }
+    }
     // Latest request per type wins; never reuse an older approval after a rejection.
     const approvals = await tx<ScopedApproval[]>`
       select distinct on (type) type, status, requested_value, decided_value, context

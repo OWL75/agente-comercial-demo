@@ -1,5 +1,6 @@
 import type { CommercialPolicyConfig } from "@/lib/db/policies";
 import { evaluateDelivery, evaluateDiscount } from "@/lib/policy/evaluate";
+import { quoteMoney } from "@/lib/policy/verified-offer";
 
 export type OrderLine = { sku: string; quantity: number; unitPrice: number; expressEligible: boolean };
 export type ScopedApproval = {
@@ -19,21 +20,14 @@ export function aggregateItems(items: { sku: string; quantity: number }[]) {
 }
 
 export function moneyTotals(lines: OrderLine[], discountPct: number) {
-  let cents = BigInt(0);
+  let subtotal = 0;
+  let total = 0;
   for (const line of lines) {
-    const unitCents = Math.round(line.unitPrice * 100);
-    if (!Number.isSafeInteger(unitCents) || unitCents < 0 || Math.abs(line.unitPrice * 100 - unitCents) > 1e-6) {
-      throw new Error("Precio inválido; se requieren importes con máximo dos decimales.");
-    }
-    cents += BigInt(unitCents) * BigInt(line.quantity);
+    const money = quoteMoney(line.unitPrice, line.quantity, discountPct);
+    subtotal += money.subtotal;
+    total += money.total;
   }
-  const bps = Math.round(discountPct * 100);
-  if (!Number.isFinite(discountPct) || bps < 0 || bps > 10000 || Math.abs(discountPct * 100 - bps) > 1e-6) {
-    throw new Error("Descuento inválido.");
-  }
-  const netCents = (cents * BigInt(10000 - bps) + BigInt(5000)) / BigInt(10000);
-  if (cents > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("Importe demasiado grande.");
-  return { subtotal: Number(cents) / 100, total: Number(netCents) / 100 };
+  return { subtotal, total };
 }
 
 export function validateOrderConditions(args: {
@@ -42,6 +36,9 @@ export function validateOrderConditions(args: {
   policy: { version: number; config: CommercialPolicyConfig }; approvals: ScopedApproval[];
 }) {
   const { lines, policy, customer } = args;
+  if (args.approvals.some((approval) => approval.status === "pending")) {
+    throw new Error("No se puede crear el pedido mientras exista una aprobación pendiente.");
+  }
   // Existing approvals scope one SKU. Multi-line exceptions await versioned quotes.
   const approved = (type: string) => args.approvals.find((a) =>
     a.type === type && ["approved", "modified"].includes(a.status) && lines.length === 1 &&

@@ -43,6 +43,13 @@ export async function updateOpportunityStage(input: UpdateOpportunityStageInput)
       where id = ${input.conversationId} for update
     `;
     if (!conversation) throw new Error("Conversación no encontrada.");
+    const [pendingApproval] = await tx`
+      select id from agente_comercial.approvals
+      where conversation_id = ${input.conversationId} and status = 'pending' limit 1
+    `;
+    if (pendingApproval && input.stage !== "awaiting_approval") {
+      throw new Error("La conversación debe permanecer en awaiting_approval mientras exista una aprobación pendiente.");
+    }
     if (input.stage === "closed") {
       const [order] = await tx`select id from agente_comercial.orders where conversation_id = ${input.conversationId} limit 1`;
       if (!order) throw new Error("No se puede marcar venta cerrada sin pedido.");

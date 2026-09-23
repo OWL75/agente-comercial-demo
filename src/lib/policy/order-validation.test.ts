@@ -39,12 +39,18 @@ describe("server-side order conditions", () => {
   it("rejects non-eligible express delivery", () => expect(() => validateOrderConditions({ ...args(), deliveryHours: 24 })).toThrow("entrega"));
   it("accepts eligible express stock", () => expect(() => validateOrderConditions({ ...args(), lines: [{ ...line, expressEligible: true }], deliveryHours: 24 })).not.toThrow());
   it("accepts an exact delivery approval", () => expect(() => validateOrderConditions({ ...args(), deliveryHours: 12, approvals: [approval("delivery", { hours: 12 })] })).not.toThrow());
+  it("rejects every order while an approval is pending", () => expect(() => validateOrderConditions({
+    ...args(), approvals: [{ ...approval("delivery", null), status: "pending" }],
+  })).toThrow("pendiente"));
   it("rejects multi-product exceptions until quote versioning exists", () => expect(() => validateOrderConditions({ ...args(), lines: [line, { ...line, sku: "CAP-002" }], discountPct: 8, approvals: [approval()] })).toThrow("aprobación"));
 });
 
 describe("quantities and currency", () => {
   it("aggregates duplicate SKUs before stock validation", () => expect(aggregateItems([{ sku: "A", quantity: 60 }, { sku: "A", quantity: 60 }])).toEqual([{ sku: "A", quantity: 120 }]));
   it("calculates the demo order exactly", () => expect(moneyTotals([line], 8)).toEqual({ subtotal: 3700, total: 3404 }));
+  it("rounds the visible net unit before multiplying", () => expect(moneyTotals([
+    { ...line, quantity: 50, unitPrice: 18.5 },
+  ], 4)).toEqual({ subtotal: 925, total: 888 }));
   it("rounds fractional cents once at the order level", () => expect(moneyTotals([{ ...line, quantity: 1, unitPrice: 0.1 }], 5).total).toBe(0.1));
   it.each([NaN, Infinity, -1, 101, 4.123])("rejects invalid discounts %s", (pct) => expect(() => moneyTotals([line], pct)).toThrow());
   it("rejects invalid catalog prices", () => expect(() => moneyTotals([{ ...line, unitPrice: NaN }], 0)).toThrow());

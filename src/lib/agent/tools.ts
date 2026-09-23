@@ -17,6 +17,7 @@ import { getDiscountPolicy, getDiscountPolicyInput } from "@/lib/tools/discount"
 import { requestApproval, requestApprovalInput, getApprovalResult, getApprovalResultInput } from "@/lib/tools/approvals";
 import { createSandboxOrder, createSandboxOrderInput } from "@/lib/tools/orders";
 import { updateOpportunityStage, updateOpportunityStageInput } from "@/lib/tools/stage";
+import { prepareVerifiedOffer, prepareVerifiedOfferInput } from "@/lib/tools/offers";
 import { assertOrderAllowed, type TurnTrigger } from "@/lib/agent/order-guard";
 
 // Identity the model never has to handle: every tool call in a conversation
@@ -116,6 +117,13 @@ export const TOOLS: AnyTool[] = [
     schema: getDiscountPolicyInput,
     execute: (input) => getDiscountPolicy(input),
     label: () => "Política de descuentos consultada",
+  }),
+  tool({
+    name: "prepare_verified_offer",
+    description: "Prepara la única oferta comercial verificable: consulta precio oficial, descuento natural y autorizado, precio neto, total, inventario, crédito, entrega y aprobaciones. Solo presenta una oferta firme si devuelve status=ready. Si devuelve approval_required, solicita las aprobaciones indicadas y espera; si devuelve unavailable, no ofrezcas esas condiciones.",
+    schema: prepareVerifiedOfferInput,
+    execute: (input, ctx) => prepareVerifiedOffer({ ...input, conversationId: ctx.conversationId, customerId: ctx.customerId }),
+    label: (_input, result: unknown) => `Oferta verificada: ${(result as { status: string }).status}`,
   }),
   tool({
     name: "request_approval",

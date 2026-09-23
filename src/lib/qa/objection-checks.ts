@@ -53,7 +53,9 @@ export type TurnSnapshot = {
 export type ScenarioTrace = { turns: TurnSnapshot[] };
 export type Check = { name: string; pass: boolean; detail: string };
 
-const NEGOTIATION_TOOLS = new Set(["get_discount_policy", "request_approval", "create_sandbox_order"]);
+const NEGOTIATION_TOOLS = new Set([
+  "get_discount_policy", "prepare_verified_offer", "request_approval", "create_sandbox_order",
+]);
 
 function check(name: string, pass: boolean, detail: string): Check {
   return { name, pass, detail };
@@ -263,6 +265,8 @@ export function evaluateMainObjectionScenario(trace: ScenarioTrace, e: MainScena
     consulted(trace, "get_delivery_options", "entrega"),
     consulted(trace, "get_credit_status", "crédito"),
     consulted(trace, "get_discount_policy", "política de descuento"),
+    consulted(trace, "prepare_verified_offer", "oferta verificada", (c) =>
+      c.input.sku === e.sku && c.input.quantity === e.quantity),
     noApprovals(trace),
     ...orderOnlyAtTurn(trace, e.confirmationTurn),
     check(

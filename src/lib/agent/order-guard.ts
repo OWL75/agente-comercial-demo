@@ -14,6 +14,7 @@ const HESITANT = new RegExp(
     "pensar(lo)?", "pensando", "revisar(lo)?", "revisando", "consultar(lo)?", "consultando",
     "puede\\s+ser", "tal\\s+vez", "quiz[aá]s?", "suena\\s+bien", "me\\s+parece\\s+bien",
     "te\\s+aviso", "le\\s+aviso", "(te|le|les)\\s+confirmo", "lo\\s+veo", "lo\\s+vemos",
+    "podr[ií]amos\\s+probar", "podemos\\s+probar", "probar[ií]a(?:mos)?",
   ].map((p) => `\\b${p}\\b`).join("|"),
 );
 
@@ -25,6 +26,7 @@ export function explainNonConfirmation(message: string): string | null {
   const text = message.toLowerCase().normalize("NFC");
   if (NEGATED.test(text)) return "el cliente negó o aplazó la confirmación";
   if (HESITANT.test(text) && !EXPLICIT.test(text)) return "el último mensaje del cliente expresa duda, no una confirmación";
+  if (!EXPLICIT.test(text)) return "el último mensaje no contiene una confirmación explícita";
   return null;
 }
 
