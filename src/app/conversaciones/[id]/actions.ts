@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { runAgentTurn } from "@/lib/agent/runtime";
+import { simulateCustomerSilence } from "@/lib/agent/follow-up";
 import { requireDemoSession } from "@/lib/security/session";
 import { uuidLike } from "@/lib/zod-helpers";
 
@@ -13,5 +14,12 @@ export async function sendMessageAction(conversationId: string, formData: FormDa
   if (text.length > 4096) throw new Error("Mensaje demasiado largo.");
 
   await runAgentTurn(conversationId, text);
+  revalidatePath(`/conversaciones/${conversationId}`);
+}
+
+export async function simulateNoReplyAction(conversationId: string) {
+  await requireDemoSession();
+  uuidLike.parse(conversationId);
+  await simulateCustomerSilence(conversationId);
   revalidatePath(`/conversaciones/${conversationId}`);
 }

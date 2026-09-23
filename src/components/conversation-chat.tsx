@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 import type { ConversationMessage } from "@/lib/db/conversations";
+import { splitWhatsAppBold } from "@/lib/channel/whatsapp-format";
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString("es-419", { hour: "2-digit", minute: "2-digit" });
@@ -19,7 +20,11 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
             : "rounded-br-sm bg-cyan-600 text-white"
         }`}
       >
-        <p className="whitespace-pre-wrap">{message.body}</p>
+        <p className="whitespace-pre-wrap">
+          {splitWhatsAppBold(message.body).map((segment, i) =>
+            segment.bold ? <strong key={i}>{segment.text}</strong> : <span key={i}>{segment.text}</span>,
+          )}
+        </p>
         <p className={`mt-1 text-[10px] ${fromCustomer ? "text-slate-500" : "text-cyan-100/70"}`}>
           {formatTime(message.createdAt)}
         </p>

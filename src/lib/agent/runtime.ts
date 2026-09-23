@@ -5,7 +5,11 @@ import { getAgentModel, getOpenAiClient } from "@/lib/agent/openai-client";
 import { getOpenAiToolDefinitions, getTool, type ToolContext } from "@/lib/agent/tools";
 import { logAudit } from "@/lib/agent/audit";
 import { isWhatsAppConfigured, sendWhatsAppMessage } from "@/lib/channel/whatsapp-client";
+import { toWhatsAppText } from "@/lib/channel/whatsapp-format";
 import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
+import { FOLLOW_UP_TOTAL, type FollowUpStep } from "@/lib/agent/follow-up-sequence";
+
+type AgentTurnOptions = { isOpeningMessage: boolean; followUp?: FollowUpStep };
 
 const SYSTEM_PROMPT_BASE = `Eres el agente comercial autónomo de Nova Distribution, un distribuidor B2B de productos de cuidado personal. Hablas con clientes por WhatsApp en español, en tono consultivo y profesional, con mensajes cortos (como se escribe en WhatsApp, no párrafos de correo).
 
@@ -21,7 +25,8 @@ Reglas obligatorias:
 - Si el cliente pide explícitamente no recibir más mensajes, llama a save_customer_insight con optOut=true inmediatamente. El sistema detendrá el turno sin más envíos; nunca reviertas esa decisión.
 - Actualiza la etapa de la conversación con update_opportunity_stage cuando avances de una etapa a otra (discovery, objection_handling, negotiating, awaiting_approval, closing, closed).
 - Solo crea el pedido con create_sandbox_order cuando el cliente haya confirmado explícitamente la compra (cantidad, producto y condición claros). Usa creditTerms exacto de la fuente y deliveryHours numérico validado. Los pedidos son sandbox, no pedidos reales ni facturas.
-- Nunca muestres tu razonamiento interno, listas de pasos o mención de "herramientas" al cliente: escribe solo el mensaje que un vendedor real enviaría.`;
+- Nunca muestres tu razonamiento interno, listas de pasos o mención de "herramientas" al cliente: escribe solo el mensaje que un vendedor real enviaría.
+- Formato de WhatsApp: para resaltar usa UN solo asterisco (*así*). Nunca uses doble asterisco, encabezados con # ni enlaces en formato Markdown.`;
 
 type ConversationContext = {
   customerId: string;
@@ -60,7 +65,7 @@ async function loadConversationContext(conversationId: string): Promise<Conversa
   };
 }
 
-function buildSystemPrompt(ctx: ConversationContext, opts: { isOpeningMessage: boolean }): string {
+function buildSystemPrompt(ctx: ConversationContext, opts: AgentTurnOptions): string {
   return `${SYSTEM_PROMPT_BASE}
 
 Contexto de esta conversación:
@@ -75,6 +80,10 @@ Llama a update_opportunity_stage con un valor breve de nextObjective (qué busca
 ${
   opts.isOpeningMessage
     ? `\nEsta es la primera vez que contactas a este cliente en esta conversación — todavía no ha dicho nada. Preséntate brevemente en nombre de Nova Distribution y pregunta, de forma natural y consultiva, por qué dejó de comprar. No presentes ofertas todavía.`
+    : ""
+}${
+  opts.followUp
+    ? `\nEl cliente no ha respondido tu último mensaje. Escribe el seguimiento ${opts.followUp.step} de ${FOLLOW_UP_TOTAL} ("${opts.followUp.title}"): ${opts.followUp.instruction} Nunca menciones que es un mensaje automático ni cuántos seguimientos van, y no copies frases de tus mensajes anteriores.`
     : ""
 }`;
 }
@@ -105,7 +114,7 @@ async function executeAgentLoop(
   context: ConversationContext,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   initialInput: any[],
-  opts: { isOpeningMessage: boolean },
+  opts: AgentTurnOptions,
 ): Promise<string> {
   // Loosely typed on purpose: the Responses API's input/output item union is
   // large and this loop only ever inspects `.type`, `.call_id`, `.name` and
@@ -181,7 +190,7 @@ async function executeAgentLoop(
     response = await client.responses.create({ model, instructions, input, tools });
   }
 
-  const reply = response.output_text ?? "";
+  const reply = toWhatsAppText(response.output_text ?? "");
   if (await isCustomerSuppressed(context.customerId)) return "";
 
   await sql`
@@ -242,6 +251,15 @@ export async function startConversation(conversationId: string): Promise<{ reply
   const context = await loadConversationContext(conversationId);
   const input = [{ role: "user" as const, content: "(inicia la conversación)" }];
   const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: true });
+  return { reply };
+}
+
+/** Like startConversation, the "customer went quiet" trigger lives only in this call, never in the stored history. */
+export async function sendFollowUp(conversationId: string, step: FollowUpStep): Promise<{ reply: string }> {
+  const context = await loadConversationContext(conversationId);
+  const history = await loadHistoryAsInput(conversationId);
+  const input = [...history, { role: "user" as const, content: "(el cliente no ha respondido)" }];
+  const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, followUp: step });
   return { reply };
 }
 
