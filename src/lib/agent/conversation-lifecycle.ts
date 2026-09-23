@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { startConversation } from "@/lib/agent/runtime";
+import { conversationNeedsTemplate, startConversationWithTemplate } from "@/lib/agent/template-outreach";
 import { normalizePhone } from "@/lib/channel/phone";
 import { isWhatsAppConfigured } from "@/lib/channel/whatsapp-client";
 
@@ -36,7 +37,10 @@ export async function startConversationForOpportunity(opportunityId: string): Pr
     return { id: conversation.id as string, created: true };
   });
   // OpenAI and WhatsApp calls deliberately remain outside the transaction.
-  if (result.created) await startConversation(result.id);
+  if (result.created) {
+    if (await conversationNeedsTemplate(result.id)) await startConversationWithTemplate(result.id);
+    else await startConversation(result.id);
+  }
   return result.id;
 }
 
