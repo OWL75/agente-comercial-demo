@@ -10,6 +10,7 @@ import { OpportunityFilters } from "@/components/opportunity-filters";
 import { OpportunityTable } from "@/components/opportunity-table";
 import { PRIORITY_LABELS, STATUS_LABELS } from "@/lib/labels";
 import { formatCurrency } from "@/lib/format";
+import Link from "next/link";
 
 const VALID_PRIORITIES = new Set(Object.keys(PRIORITY_LABELS));
 const VALID_STATUSES = new Set(Object.keys(STATUS_LABELS));
@@ -41,6 +42,12 @@ export default async function OportunidadesPage({
           </p>
           <h1 className="mt-1 text-2xl font-semibold text-slate-50">Centro de Oportunidades</h1>
         </div>
+        <Link
+          href="/demo"
+          className="rounded-lg border border-cyan-500/50 px-4 py-2.5 text-sm font-semibold text-cyan-300 transition hover:border-cyan-400 hover:bg-cyan-500/10"
+        >
+          Preparar demo en vivo
+        </Link>
       </header>
 
       <section className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">

@@ -120,7 +120,7 @@ export const TOOLS: AnyTool[] = [
     name: "get_approval_result",
     description: "Consulta el estado actual de una solicitud de aprobación previamente creada (pendiente, aprobada, modificada o rechazada).",
     schema: getApprovalResultInput,
-    execute: (input) => getApprovalResult(input),
+    execute: (input, ctx) => getApprovalResult({ ...input, conversationId: ctx.conversationId }),
     label: (_input, result: unknown) => `Resultado de aprobación: ${(result as { status: string }).status}`,
   }),
   tool({

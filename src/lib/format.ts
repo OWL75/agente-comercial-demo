@@ -6,6 +6,13 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+const unitPriceFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 // timeZone: "UTC" matters here: Postgres DATE columns come back as JS Date
 // objects at UTC midnight (via the `postgres` driver), so formatting in the
 // host's local timezone would shift the displayed day backward whenever the
@@ -20,6 +27,11 @@ const dateFormatter = new Intl.DateTimeFormat("es-419", {
 export function formatCurrency(value: number | null | undefined): string {
   if (value == null) return "—";
   return currencyFormatter.format(value);
+}
+
+export function formatUnitPrice(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return unitPriceFormatter.format(value);
 }
 
 export function formatDate(value: string | Date | null | undefined): string {

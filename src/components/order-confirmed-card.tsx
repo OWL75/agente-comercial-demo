@@ -1,6 +1,6 @@
 import type { OrderSummary } from "@/lib/db/orders";
 import type { ConversationClosingStats } from "@/lib/db/conversations";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatUnitPrice } from "@/lib/format";
 
 const CHECKS = ["Cliente", "Inventario", "Precio", "Crédito", "Descuento", "Entrega"];
 
@@ -29,7 +29,7 @@ export function OrderConfirmedCard({
         {order.items.map((item) => (
           <li key={item.sku}>
             {item.quantity} × {item.name}{" "}
-            <span className="text-slate-500">({formatCurrency(item.unitPrice)} c/u)</span>
+            <span className="text-slate-500">({formatUnitPrice(item.unitPrice)} c/u)</span>
           </li>
         ))}
       </ul>

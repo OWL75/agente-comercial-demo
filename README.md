@@ -2,6 +2,11 @@
 
 Demo funcional de SISTECOMP para mostrar en reuniones comerciales: un agente que detecta oportunidades en una cartera de clientes, conversa por WhatsApp (real, vía Meta Cloud API — con respaldo simulado en la app si no hay credenciales configuradas), negocia dentro de reglas de negocio, y escala a un humano solo cuando la decisión excede su autonomía.
 
+## Fase 2.1 — demo comercial repetible
+
+Controles y límites de esta entrega: [docs/FASE_2.md](docs/FASE_2.md).
+El pedido sigue siendo sandbox y no escribe en el ERP. La app incluye un modo de preparación para reuniones en `/demo`.
+
 ## Stack
 
 - Next.js 16 (App Router) + TypeScript + Tailwind 4 — mismo stack que `constancia` y `recuperacion-inteligente-ventas`.
@@ -37,15 +42,27 @@ Canal desacoplado de la lógica del agente (`src/lib/channel/`): si las credenci
 | `WHATSAPP_ACCESS_TOKEN` | Token de un System User de Meta Business con permiso `whatsapp_business_messaging` sobre esta app (o el token temporal de 24h que da el panel de pruebas, para empezar). |
 | `WHATSAPP_PHONE_NUMBER_ID` | Panel de la app de Meta → WhatsApp → API Setup. |
 | `WHATSAPP_VERIFY_TOKEN` | Lo inventas tú — cadena arbitraria que se pega igual en Meta al registrar el webhook. |
-| `WHATSAPP_APP_SECRET` | Panel de la app de Meta → App Settings → Basic. Sin esto el webhook acepta peticiones sin firmar (útil mientras llegan las demás credenciales, pero no para producción). |
+| `WHATSAPP_APP_SECRET` | Panel de la app de Meta → App Settings → Basic. Obligatorio: sin secreto o sin `WHATSAPP_PHONE_NUMBER_ID`, el webhook devuelve 503; una firma ausente/inválida devuelve 401. |
+| `WHATSAPP_API_VERSION` | Versión de Graph API. El valor predeterminado actual es `v26.0`. |
+| `DEMO_WHATSAPP_RECIPIENT` | Teléfono que representará al cliente durante la reunión, en formato internacional E.164 (por ejemplo `+50766123456`). |
 
 **Importante:** usar una **App de Meta separada** de la que usa el agente de soporte (`vps-assistant/n8n-agente-soporte`) — Meta enruta todos los números de una misma app al mismo webhook, y mezclar los dos agentes en una sola app arriesga romper el flujo de soporte en producción.
 
 **Webhook:** `GET|POST /api/webhooks/whatsapp`. Registrar en el panel de Meta (WhatsApp → Configuration → Webhook) la URL pública de esta app + `/api/webhooks/whatsapp`, con el mismo valor de `WHATSAPP_VERIFY_TOKEN`, suscrito al campo `messages`.
 
+### Flujo para reuniones y video
+
+1. Desde `DEMO_WHATSAPP_RECIPIENT`, enviar cualquier mensaje al número del agente para abrir la ventana de atención de 24 horas.
+2. Entrar a `/demo` y comprobar que teléfono, envío y webhook aparezcan listos.
+3. Pulsar **Crear/Reiniciar demostración**. Esto reconstruye únicamente `Empresa Demo`; no toca los demás clientes.
+4. En la ficha que se abre, pulsar **Iniciar conversación**. El agente enviará el primer mensaje libre dentro de la ventana ya abierta.
+5. Responder desde WhatsApp mientras se proyecta la vista web para mostrar contexto, herramientas, políticas y cierre.
+
+Fuera de esa ventana, una implementación real debe iniciar el contacto con una plantilla aprobada por Meta. El atajo anterior se usa solo para acelerar reuniones y grabaciones; no cambia la regla del canal que se explica a prospectos.
+
 **Probar en local:** Meta necesita una URL pública HTTPS para entregar el webhook — `localhost:3000` no sirve. Usa un túnel (`ngrok http 3000`, `cloudflared tunnel --url http://localhost:3000`, etc.) y registra esa URL temporal en Meta mientras pruebas.
 
-**Idempotencia:** cada mensaje entrante guarda el `id` de WhatsApp en `messages.external_message_id` (único); si Meta reintenta la entrega del mismo mensaje, se ignora en vez de generar una respuesta duplicada.
+**Deduplicación de entrada:** el insert utiliza `ON CONFLICT DO NOTHING`, apoyado en la restricción única existente sobre `messages.external_message_id` (pendiente verificar en el esquema de staging). Esto no recupera un turno interrumpido después de guardar el mensaje. Una inbox/outbox persistente y procesamiento por conversación siguen pendientes.
 
 **Resiliencia:** un envío real fallido (WhatsApp caído, token vencido) se registra en `audit_log` pero nunca rompe la conversación dentro de la app — verificado en vivo forzando un 401 real contra la Graph API de Meta con credenciales inválidas.
 
@@ -61,7 +78,7 @@ Canal desacoplado de la lógica del agente (`src/lib/channel/`): si las credenci
 
 ## QA de escenarios comerciales (Etapa 9)
 
-`npm run qa:scenarios` corre los 10 escenarios obligatorios contra el **agent runtime real** (OpenAI + herramientas + policy engine + base de datos), no contra mocks. Cada escenario:
+`npm run qa:scenarios` requiere `QA_DATABASE_URL` de una base de pruebas separada, con catálogo y políticas cargados, y `QA_ALLOW_LIVE_MODEL=true`. No acepta el mismo URL configurado en `DATABASE_URL` y deshabilita los envíos WhatsApp. Un URL diferente no prueba que sea otra base: verificar también el destino antes de ejecutar. Corre los 10 escenarios contra el **agent runtime real** (OpenAI + herramientas + policy engine + base de datos), no contra mocks. Cada escenario:
 
 1. Crea un cliente/oportunidad/conversación de prueba desechable (nunca toca a Comercial Delta ni al resto del dataset demo).
 2. Envía el mensaje del cliente (uno o dos turnos, según el escenario).
@@ -81,7 +98,7 @@ Canal desacoplado de la lógica del agente (`src/lib/channel/`): si las credenci
 | 9 | Cliente pide no recibir más mensajes | Se guarda `customer_insights.opt_out = true`. |
 | 10 | Cliente confirma la compra con todos los datos claros | Se crea el pedido sandbox con el total correcto. |
 
-Última corrida: **10/10 escenarios pasando** contra `gpt-5.6-luna`.
+Resultado histórico de V1: **10/10 escenarios pasando** según la construcción original. No se han vuelto a ejecutar los escenarios con modelo real para esta rama de fase 2. `npm test` sí cubre controles deterministas y consultas SQL contra un fixture PostgreSQL/WASM aislado.
 
 **Nota sobre no-determinismo:** estos son tests de comportamiento contra un LLM real, no unit tests deterministas. Un fallo puntual en 1-2 escenarios no necesariamente indica un bug de código — puede ser el modelo tomando un camino igual de válido pero distinto al que el escenario asume (p. ej. pedir confirmación antes de escalar una excepción, en vez de escalar de inmediato). Antes de "arreglar" un fallo, lee la respuesta real del agente (el script la imprime) para distinguir un bug real de una variación de comportamiento razonable — así se encontraron y corrigieron los bugs reales documentados abajo.
 
@@ -97,6 +114,6 @@ Canal desacoplado de la lógica del agente (`src/lib/channel/`): si las credenci
 
 - Un número de WhatsApp de **producción** (verificado ante Meta) — hoy funciona con el número de prueba gratuito de Meta, que solo puede escribirle a números verificados manualmente (máx. 5).
 - Autenticación real (hoy es un gate de contraseña compartida, sin usuarios).
-- Transacciones atómicas en Postgres para escrituras concurrentes (hoy son escrituras secuenciales, aceptable a escala de demo).
+- Completar cotizaciones versionadas, inbox/outbox e índices únicos. Esta rama ya usa transacciones para pedidos, memoria, solicitudes de aprobación, etapas e inicio de conversación; falta validar concurrencia con varias conexiones y el esquema real.
 - Aislamiento de RLS más allá de "todo bloqueado salvo el servidor" (suficiente porque el navegador nunca habla con la base directamente).
 - El webhook de WhatsApp procesa cada mensaje de forma síncrona antes de responder 200 a Meta (simple y suficiente para una conversación a la vez); con concurrencia real convendría pasar a una cola para no arriesgar el timeout/reintento de Meta en un turno con muchas llamadas a herramientas.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCurrency, formatDate, formatDays } from "@/lib/format";
+import { formatCurrency, formatDate, formatDays, formatUnitPrice } from "@/lib/format";
 
 describe("formatCurrency", () => {
   it("formats a positive amount as USD with no decimals", () => {
@@ -9,6 +9,16 @@ describe("formatCurrency", () => {
   it("returns an em dash for null/undefined", () => {
     expect(formatCurrency(null)).toBe("—");
     expect(formatCurrency(undefined)).toBe("—");
+  });
+});
+
+describe("formatUnitPrice", () => {
+  it("keeps cents visible on per-unit prices", () => {
+    expect(formatUnitPrice(18.5)).toBe("$18.50");
+  });
+
+  it("returns an em dash for missing values", () => {
+    expect(formatUnitPrice(null)).toBe("—");
   });
 });
 

@@ -2,6 +2,7 @@
 
 import { useState, useTransition, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { safeLoginDestination } from "@/lib/security/redirect";
 
 function LoginForm() {
   const router = useRouter();
@@ -24,7 +25,7 @@ function LoginForm() {
         setError(body.message ?? "No se pudo iniciar sesión.");
         return;
       }
-      router.replace(searchParams.get("next") || "/oportunidades");
+      router.replace(safeLoginDestination(searchParams.get("next")));
       router.refresh();
     });
   }

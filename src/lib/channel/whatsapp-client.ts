@@ -1,6 +1,6 @@
 import "server-only";
 
-const DEFAULT_API_VERSION = "v21.0";
+const DEFAULT_API_VERSION = "v26.0";
 
 export function isWhatsAppConfigured(): boolean {
   return Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);

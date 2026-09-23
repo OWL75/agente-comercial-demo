@@ -91,6 +91,15 @@ async function runScenario(
 }
 
 async function main() {
+  // Live model QA is opt-in, uses a separate database, and never sends WhatsApp.
+  // Do not run a fixture-creating/deleting script against the demo deployment.
+  const qaDatabaseUrl = process.env.QA_DATABASE_URL;
+  if (!qaDatabaseUrl || qaDatabaseUrl === process.env.DATABASE_URL || process.env.QA_ALLOW_LIVE_MODEL !== "true") {
+    throw new Error("Configura QA_DATABASE_URL de una base aislada distinta de DATABASE_URL y QA_ALLOW_LIVE_MODEL=true.");
+  }
+  process.env.DATABASE_URL = qaDatabaseUrl;
+  delete process.env.WHATSAPP_ACCESS_TOKEN;
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID;
   await runScenario(
     "1. Cliente dice que compra con otro proveedor — debe intentar descubrir por qué",
     "Ya no te voy a comprar, estoy trabajando con otro proveedor.",
@@ -234,7 +243,7 @@ async function main() {
         select id, total from agente_comercial.orders where conversation_id = ${conversationId}
       `;
       return {
-        pass: !!order,
+        pass: !!order && Number(order.total) === 925,
         detail: order ? `Pedido creado: ${order.id} total=${order.total}` : "No se creó ningún pedido.",
       };
     },

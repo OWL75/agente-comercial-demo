@@ -5,6 +5,7 @@ import { getAgentModel, getOpenAiClient } from "@/lib/agent/openai-client";
 import { getOpenAiToolDefinitions, getTool, type ToolContext } from "@/lib/agent/tools";
 import { logAudit } from "@/lib/agent/audit";
 import { isWhatsAppConfigured, sendWhatsAppMessage } from "@/lib/channel/whatsapp-client";
+import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
 
 const SYSTEM_PROMPT_BASE = `Eres el agente comercial autónomo de Nova Distribution, un distribuidor B2B de productos de cuidado personal. Hablas con clientes por WhatsApp en español, en tono consultivo y profesional, con mensajes cortos (como se escribe en WhatsApp, no párrafos de correo).
 
@@ -17,9 +18,9 @@ Reglas obligatorias:
 - Antes de ofrecer o aceptar cualquier descuento, usa get_discount_policy con el porcentaje solicitado. Si la herramienta indica "auto_approve", puedes ofrecerlo tú mismo. Si indica "requires_approval", debes llamar a request_approval y decirle al cliente que necesitas confirmar esa condición — nunca la des por aprobada tú mismo. Si indica "denied", explica que ese porcentaje no es posible y ofrece como máximo el límite autorizable.
 - Cualquier crédito nuevo o aumento de crédito requiere request_approval; una condición de crédito ya existente no.
 - Cuando descubras información relevante (motivo de inactividad, competidor mencionado, objeción, producto de interés, cantidad, precio objetivo, condición solicitada, intención de compra), guárdala con save_customer_insight — no esperes al final de la conversación.
-- Si el cliente pide explícitamente no recibir más mensajes, respeta eso de inmediato: llama a save_customer_insight con optOut=true, despídete brevemente y no insistas.
+- Si el cliente pide explícitamente no recibir más mensajes, llama a save_customer_insight con optOut=true inmediatamente. El sistema detendrá el turno sin más envíos; nunca reviertas esa decisión.
 - Actualiza la etapa de la conversación con update_opportunity_stage cuando avances de una etapa a otra (discovery, objection_handling, negotiating, awaiting_approval, closing, closed).
-- Solo crea el pedido con create_sandbox_order cuando el cliente haya confirmado explícitamente la compra (cantidad, producto y condición claros). Esa herramienta revalida todo internamente.
+- Solo crea el pedido con create_sandbox_order cuando el cliente haya confirmado explícitamente la compra (cantidad, producto y condición claros). Usa creditTerms exacto de la fuente y deliveryHours numérico validado. Los pedidos son sandbox, no pedidos reales ni facturas.
 - Nunca muestres tu razonamiento interno, listas de pasos o mención de "herramientas" al cliente: escribe solo el mensaje que un vendedor real enviaría.`;
 
 type ConversationContext = {
@@ -113,6 +114,7 @@ async function executeAgentLoop(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let input: any[] = initialInput;
 
+  if (await isCustomerSuppressed(context.customerId)) return "";
   const client = getOpenAiClient();
   const model = getAgentModel();
   const tools = getOpenAiToolDefinitions();
@@ -131,6 +133,7 @@ async function executeAgentLoop(
     input = input.concat(response.output);
 
     for (const call of functionCalls) {
+      if (await isCustomerSuppressed(context.customerId)) return "";
       const tool = getTool(call.name);
       let outputPayload: unknown;
 
@@ -174,10 +177,12 @@ async function executeAgentLoop(
       });
     }
 
+    if (await isCustomerSuppressed(context.customerId)) return "";
     response = await client.responses.create({ model, instructions, input, tools });
   }
 
   const reply = response.output_text ?? "";
+  if (await isCustomerSuppressed(context.customerId)) return "";
 
   await sql`
     insert into agente_comercial.messages (conversation_id, direction, sender, body)
@@ -189,6 +194,7 @@ async function executeAgentLoop(
   // way — so failures are logged, not thrown.
   if (isWhatsAppConfigured() && context.customerPhone && reply) {
     try {
+      if (await isCustomerSuppressed(context.customerId)) return "";
       await sendWhatsAppMessage(context.customerPhone, reply);
     } catch (err) {
       await logAudit({
@@ -207,20 +213,17 @@ export async function runAgentTurn(
   customerMessage: string,
   opts: { externalMessageId?: string } = {},
 ): Promise<{ reply: string }> {
-  if (opts.externalMessageId) {
-    const [existing] = await sql<Array<{ id: string }>>`
-      select id from agente_comercial.messages where external_message_id = ${opts.externalMessageId}
-    `;
-    // Meta retries webhook deliveries it didn't get a fast 200 for — without
-    // this guard a retry would re-run the whole agent turn and send a
-    // second reply to the same customer message.
-    if (existing) return { reply: "" };
-  }
-
-  await sql`
+  const [conversation] = await sql`select ended_at from agente_comercial.conversations where id = ${conversationId}`;
+  if (!conversation || conversation.ended_at) throw new Error("Conversación no disponible.");
+  const [inserted] = await sql`
     insert into agente_comercial.messages (conversation_id, direction, sender, body, external_message_id)
     values (${conversationId}, 'inbound', 'customer', ${customerMessage}, ${opts.externalMessageId ?? null})
+    on conflict do nothing
+    returning id
   `;
+  // Requires the existing DB uniqueness guarantee on external_message_id.
+  // Recovery of an inserted-but-unprocessed message still requires the durable inbox.
+  if (!inserted) return { reply: "" };
 
   const context = await loadConversationContext(conversationId);
   const input = await loadHistoryAsInput(conversationId);
