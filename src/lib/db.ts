@@ -14,6 +14,10 @@ function createClient() {
     max: 5,
     idle_timeout: 20,
     connect_timeout: 10,
+    // Supabase's transaction pooler (port 6543) hands each transaction a
+    // different backend, so named prepared statements can vanish mid-flow
+    // and silently abort transactions.
+    prepare: false,
   });
 }
 
