@@ -73,7 +73,7 @@ Fuera de esa ventana, una implementación real debe iniciar el contacto con una 
 | `npm run dev` / `npm run build` / `npm start` | Next.js estándar. |
 | `npm run typecheck` | `tsc --noEmit`. |
 | `npm run lint` | ESLint. |
-| `npm test` | Tests unitarios (policy engine, formateo) — rápidos, sin red. |
+| `npm test` | Tests deterministas (policy engine, formateo, SQL en PostgreSQL/WASM y escenarios de objeciones con un modelo guionizado sobre el runtime real) — rápidos, sin red. |
 | `npm run qa:scenarios` | **QA obligatorio (sección 19 del spec)** — ver abajo. |
 
 ## QA de escenarios comerciales (Etapa 9)
@@ -87,7 +87,7 @@ Fuera de esa ventana, una implementación real debe iniciar el contacto con una 
 
 | # | Escenario | Qué verifica |
 |---|---|---|
-| 1 | Cliente dice que compra con otro proveedor | El agente hace una pregunta de descubrimiento (no vende de inmediato). |
+| 1 | Cliente dice que compra con otro proveedor | Guarda el competidor y no negocia descuento, excepción ni pedido en ese turno. |
 | 2 | Cliente pregunta precio | Se usó `get_product_price` (nunca un precio inventado). |
 | 3 | Cliente pregunta disponibilidad | Se usó `get_inventory`. |
 | 4 | Cliente pide 4% de descuento | Se resuelve de forma autónoma — no se crea ninguna aprobación. |
@@ -97,6 +97,8 @@ Fuera de esa ventana, una implementación real debe iniciar el contacto con una 
 | 8 | No hay stock suficiente (pedido de 300 uds. de un producto con 95 en stock) | No se crea ningún pedido. |
 | 9 | Cliente pide no recibir más mensajes | Se guarda `customer_insights.opt_out = true`. |
 | 10 | Cliente confirma la compra con todos los datos claros | Se crea el pedido sandbox con el total correcto. |
+
+Además corre los 10 escenarios de manejo de objeciones de `src/lib/qa/objection-scenarios.ts` (uno principal de seis turnos y nueve adicionales). Se evalúan por efectos —herramientas, insights, etapas, aprobaciones y pedidos— con `src/lib/qa/objection-checks.ts`, y el script imprime cada respuesta para revisar el tono. Ver `docs/FASE_2_OBJECIONES.md`.
 
 Resultado histórico de V1: **10/10 escenarios pasando** según la construcción original. No se han vuelto a ejecutar los escenarios con modelo real para esta rama de fase 2. `npm test` sí cubre controles deterministas y consultas SQL contra un fixture PostgreSQL/WASM aislado.
 

@@ -13,7 +13,9 @@ export type FollowUpState = {
 
 /**
  * Follow-ups are counted from the audit log since the customer's last
- * message, so any reply from the customer restarts the sequence.
+ * message, so any reply from the customer restarts the sequence. A firm
+ * rejection or a follow-up date agreed with the customer pauses it: the
+ * sequence must not keep pushing someone who said no or asked for later.
  */
 export async function getFollowUpState(conversationId: string): Promise<FollowUpState> {
   const [row] = await sql`
@@ -28,8 +30,12 @@ export async function getFollowUpState(conversationId: string): Promise<FollowUp
           and a.created_at > coalesce(
             (select max(m.created_at) from agente_comercial.messages m
               where m.conversation_id = conv.id and m.sender = 'customer'),
-            '-infinity'::timestamptz)) as sent_count
+            '-infinity'::timestamptz)) as sent_count,
+      ci.resultado as outcome,
+      ci.proxima_fecha::text as next_contact_date,
+      coalesce(ci.proxima_fecha > current_date, false) as waiting_for_date
     from agente_comercial.conversations conv
+    left join agente_comercial.customer_insights ci on ci.conversation_id = conv.id
     where conv.id = ${conversationId}
   `;
   if (!row) return { sentCount: 0, canSimulate: false, blockedReason: "Conversación no encontrada." };
@@ -43,9 +49,13 @@ export async function getFollowUpState(conversationId: string): Promise<FollowUp
         ? "Primero inicia la conversación."
         : row.last_sender === "customer"
           ? "El cliente respondió: el agente contesta y la secuencia se reinicia."
-          : sentCount >= FOLLOW_UP_TOTAL
-            ? "Secuencia completa: la oportunidad queda en pausa hasta el próximo ciclo de compra."
-            : null;
+          : row.outcome === "rechazo_firme"
+            ? "El cliente rechazó la propuesta de forma definitiva: no se envían seguimientos."
+            : row.waiting_for_date
+              ? `El cliente pidió retomar el ${row.next_contact_date}: la secuencia espera hasta esa fecha.`
+              : sentCount >= FOLLOW_UP_TOTAL
+                ? "Secuencia completa: la oportunidad queda en pausa hasta el próximo ciclo de compra."
+                : null;
 
   return { sentCount, canSimulate: blockedReason === null, blockedReason };
 }

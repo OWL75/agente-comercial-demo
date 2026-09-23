@@ -2,7 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { sql } from "@/lib/db";
 import { uuidLike } from "@/lib/zod-helpers";
-import { buildInsightPatch } from "@/lib/policy/insight-patch";
+import { buildInsightPatchWithRejections } from "@/lib/policy/insight-patch";
+import { INSIGHT_OUTCOMES, OBJECTION_TYPES } from "@/lib/agent/sales-playbook";
 
 export const getCustomerProfileInput = z.object({
   customerId: uuidLike,
@@ -71,15 +72,15 @@ export const saveCustomerInsightInput = z.object({
   customerId: uuidLike,
   motivoInactividad: z.string().nullable().optional(),
   competidorMencionado: z.string().nullable().optional(),
-  objecion: z.string().nullable().optional(),
+  objecion: z.string().nullable().optional().describe(`Formato "tipo: detalle". Tipos: ${OBJECTION_TYPES.join(", ")}.`),
   productoInteres: z.string().nullable().optional(),
   cantidad: z.number().int().nullable().optional(),
   precioObjetivo: z.number().nullable().optional(),
   condicionSolicitada: z.string().nullable().optional(),
   intencionCompra: z.string().nullable().optional(),
-  resultado: z.string().nullable().optional(),
-  proximaAccion: z.string().nullable().optional(),
-  proximaFecha: z.string().nullable().optional(),
+  resultado: z.string().nullable().optional().describe(`Uno de: ${INSIGHT_OUTCOMES.join(", ")}.`),
+  proximaAccion: z.string().nullable().optional().describe("Siguiente paso acordado con el cliente."),
+  proximaFecha: z.string().nullable().optional().describe("Fecha del próximo contacto en formato AAAA-MM-DD. Solo si el cliente lo autorizó."),
   resumen: z.string().nullable().optional(),
   optOut: z.boolean().optional(),
 });
@@ -87,7 +88,10 @@ export type SaveCustomerInsightInput = z.infer<typeof saveCustomerInsightInput>;
 
 export async function saveCustomerInsight(input: SaveCustomerInsightInput) {
   input = saveCustomerInsightInput.parse(input);
-  const values = buildInsightPatch(input);
+  const { values, rejected } = buildInsightPatchWithRejections(input);
+  const warnings = rejected.length > 0
+    ? { rejected: rejected.map((r) => `${r.field} no se guardó: ${r.reason}. Vuelve a enviarlo corregido.`) }
+    : {};
   return sql.begin(async (tx) => {
     // Serialize insight writes; do not keep a transaction open during model/API calls.
     const [conversation] = await tx`
@@ -100,9 +104,9 @@ export async function saveCustomerInsight(input: SaveCustomerInsightInput) {
       select id from agente_comercial.customer_insights where conversation_id = ${input.conversationId}
     `;
     if (existing) {
-      if (Object.keys(values).length === 0) return { id: existing.id, updated: false };
+      if (Object.keys(values).length === 0) return { id: existing.id, updated: false, ...warnings };
       await tx`update agente_comercial.customer_insights set ${tx(values)} where id = ${existing.id}`;
-      return { id: existing.id, updated: true };
+      return { id: existing.id, updated: true, ...warnings };
     }
     const [row] = await tx`
       insert into agente_comercial.customer_insights ${tx({
@@ -110,6 +114,6 @@ export async function saveCustomerInsight(input: SaveCustomerInsightInput) {
         opt_out: false, ...values,
       })} returning id
     `;
-    return { id: row.id, updated: false };
+    return { id: row.id, updated: false, ...warnings };
   });
 }

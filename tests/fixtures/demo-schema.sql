@@ -1,5 +1,6 @@
 -- Test fixture only, inferred from repository queries. NOT a production
 -- migration, schema dump, or complete representation of Supabase constraints.
+-- The stage and insight CHECKs mirror constraints read from production on 2026-09-23.
 create schema agente_comercial;
 create table agente_comercial.customers (
   id uuid primary key default gen_random_uuid(), name text not null default 'QA',
@@ -19,7 +20,7 @@ create table agente_comercial.opportunities (
 create table agente_comercial.conversations (
   id uuid primary key default gen_random_uuid(), customer_id uuid references agente_comercial.customers on delete cascade,
   opportunity_id uuid references agente_comercial.opportunities on delete cascade, ended_at timestamptz,
-  stage text default 'discovery', objective_current text, channel text, started_at timestamptz default now()
+  stage text default 'discovery' check (stage in ('discovery','objection_handling','negotiating','awaiting_approval','closing','closed')), objective_current text, channel text, started_at timestamptz default now()
 );
 create table agente_comercial.products (
   id uuid primary key default gen_random_uuid(), sku text unique not null,
@@ -44,7 +45,8 @@ create table agente_comercial.customer_insights (
   customer_id uuid references agente_comercial.customers on delete cascade, opt_out boolean default false,
   motivo_inactividad text, competidor_mencionado text, objecion text, producto_interes text,
   cantidad integer, precio_objetivo numeric, condicion_solicitada text, intencion_compra text,
-  resultado text, proxima_accion text, proxima_fecha date, resumen text
+  resultado text, proxima_accion text, proxima_fecha date, resumen text,
+  check (cantidad is null or cantidad > 0), check (precio_objetivo is null or precio_objetivo >= 0)
 );
 create table agente_comercial.approvals (
   id uuid primary key default gen_random_uuid(), conversation_id uuid references agente_comercial.conversations on delete cascade,
@@ -63,10 +65,10 @@ create table agente_comercial.order_items (
 );
 create table agente_comercial.audit_log (
   id uuid primary key default gen_random_uuid(), conversation_id uuid references agente_comercial.conversations on delete cascade,
-  category text, label text, payload jsonb
+  category text, label text, payload jsonb, created_at timestamptz default clock_timestamp()
 );
 create table agente_comercial.messages (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid references agente_comercial.conversations on delete cascade,
-  direction text, sender text, body text, created_at timestamptz default now(), external_message_id text
+  direction text, sender text, body text, created_at timestamptz default clock_timestamp(), external_message_id text
 );

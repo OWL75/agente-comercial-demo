@@ -11,6 +11,9 @@
 import { randomUUID } from "node:crypto";
 import { sql, endSql } from "@/lib/db";
 import { runAgentTurn } from "@/lib/agent/runtime";
+import { runTracedConversation } from "@/lib/qa/trace";
+import { ADDITIONAL_OBJECTION_SCENARIOS, MAIN_OBJECTION_SCENARIO, type ObjectionScenario } from "@/lib/qa/objection-scenarios";
+import { todayInPanama } from "@/lib/agent/system-prompt";
 
 type ScenarioResult = { name: string; pass: boolean; detail: string; reply: string; labels: string[] };
 
@@ -90,6 +93,34 @@ async function runScenario(
   }
 }
 
+/**
+ * Multi-turn objection scenarios: every check is about effects (tools, insights,
+ * stages, approvals, orders). Replies are printed for human review of tone and
+ * of anything the checks cannot see, such as an invented guarantee.
+ */
+async function runObjectionScenario(scenario: ObjectionScenario) {
+  const name = `Objeciones — ${scenario.name}`;
+  const fixture = await createFixture();
+  try {
+    const trace = await runTracedConversation(fixture.conversationId, { opening: scenario.opening, messages: scenario.messages });
+    const checks = scenario.evaluate(trace, todayInPanama());
+    results.push({
+      name,
+      pass: checks.every((c) => c.pass),
+      detail: checks.map((c) => `${c.pass ? "✓" : "✗"} ${c.name}${c.pass ? "" : ` — ${c.detail}`}`).join("\n   "),
+      reply: trace.turns.map((t) => `[${t.customerMessage ?? "apertura"}] → ${t.reply}`).join("\n   "),
+      labels: trace.turns.flatMap((t) => [
+        ...t.toolCalls.map((c) => c.tool),
+        ...t.failedCalls.map((f) => `ERROR ${f.tool}: ${f.error}`),
+      ]),
+    });
+  } catch (err) {
+    results.push({ name, pass: false, detail: `Excepción: ${err instanceof Error ? err.message : String(err)}`, reply: "", labels: [] });
+  } finally {
+    await destroyFixture(fixture.customerId);
+  }
+}
+
 async function main() {
   // Live model QA is opt-in, uses a separate database, and never sends WhatsApp.
   // Do not run a fixture-creating/deleting script against the demo deployment.
@@ -101,14 +132,20 @@ async function main() {
   delete process.env.WHATSAPP_ACCESS_TOKEN;
   delete process.env.WHATSAPP_PHONE_NUMBER_ID;
   await runScenario(
-    "1. Cliente dice que compra con otro proveedor — debe intentar descubrir por qué",
+    "1. Cliente dice que compra con otro proveedor — debe registrarlo y descubrir sin negociar",
     "Ya no te voy a comprar, estoy trabajando con otro proveedor.",
-    async ({ reply }) => ({
-      pass: reply.includes("?"),
-      detail: reply.includes("?")
-        ? "El agente hizo una pregunta de descubrimiento."
-        : `No se detectó una pregunta en la respuesta: "${reply}"`,
-    }),
+    async ({ conversationId, payloads }) => {
+      const [insight] = await sql<Array<{ competidor_mencionado: string | null }>>`
+        select competidor_mencionado from agente_comercial.customer_insights where conversation_id = ${conversationId}
+      `;
+      const negotiated = payloads.some((p) =>
+        ["get_discount_policy", "request_approval", "create_sandbox_order"].includes((p.payload as { tool?: string })?.tool ?? ""),
+      );
+      return {
+        pass: !!insight?.competidor_mencionado && !negotiated,
+        detail: `competidor=${insight?.competidor_mencionado ?? "no guardado"}; negoció en el primer turno=${negotiated}`,
+      };
+    },
   );
 
   await runScenario(
@@ -249,13 +286,17 @@ async function main() {
     },
   );
 
-  console.log("\n=== Resultado QA (spec sección 19) ===\n");
+  for (const scenario of [MAIN_OBJECTION_SCENARIO, ...ADDITIONAL_OBJECTION_SCENARIOS]) {
+    await runObjectionScenario(scenario);
+  }
+
+  console.log("\n=== Resultado QA (spec sección 19 + manejo de objeciones) ===\n");
   for (const r of results) {
     console.log(`${r.pass ? "✅ PASS" : "❌ FAIL"} — ${r.name}`);
     console.log(`   ${r.detail}`);
-    if (!r.pass) {
+    if (!r.pass || r.name.startsWith("Objeciones")) {
       console.log(`   Herramientas usadas: ${JSON.stringify(r.labels)}`);
-      console.log(`   Respuesta del agente: "${r.reply}"`);
+      console.log(`   Respuesta(s) del agente:\n   ${r.reply}`);
     }
     console.log("");
   }

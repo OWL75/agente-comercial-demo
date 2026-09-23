@@ -17,12 +17,20 @@ import { getDiscountPolicy, getDiscountPolicyInput } from "@/lib/tools/discount"
 import { requestApproval, requestApprovalInput, getApprovalResult, getApprovalResultInput } from "@/lib/tools/approvals";
 import { createSandboxOrder, createSandboxOrderInput } from "@/lib/tools/orders";
 import { updateOpportunityStage, updateOpportunityStageInput } from "@/lib/tools/stage";
+import { assertOrderAllowed, type TurnTrigger } from "@/lib/agent/order-guard";
 
 // Identity the model never has to handle: every tool call in a conversation
 // is scoped to that one conversation and its one customer, so the registry
 // injects both before validating the model's arguments — never trusting a
 // customerId/conversationId the model typed out itself (see runtime.ts).
-export type ToolContext = { conversationId: string; customerId: string };
+// `trigger`/`customerMessage` describe the turn, so order creation can refuse
+// turns the customer did not start (opening, follow-up, post-approval resume).
+export type ToolContext = {
+  conversationId: string;
+  customerId: string;
+  trigger: TurnTrigger;
+  customerMessage?: string;
+};
 
 type AnyTool = {
   name: string;
@@ -125,9 +133,12 @@ export const TOOLS: AnyTool[] = [
   }),
   tool({
     name: "create_sandbox_order",
-    description: "Crea el pedido en el entorno sandbox una vez que el cliente confirmó explícitamente la compra y todos los datos (precio, stock, descuento, crédito, entrega) fueron validados. Revalida todo internamente; no confíes en cifras mencionadas antes en la conversación.",
+    description: "Crea el pedido en el entorno sandbox una vez que el cliente confirmó explícitamente la oferta resumida y todos los datos (precio, stock, descuento, crédito, entrega) fueron validados. Solo funciona en respuesta directa al mensaje de confirmación del cliente. Revalida todo internamente; no confíes en cifras mencionadas antes en la conversación.",
     schema: createSandboxOrderInput,
-    execute: (input, ctx) => createSandboxOrder({ ...input, conversationId: ctx.conversationId, customerId: ctx.customerId }),
+    execute: async (input, ctx) => {
+      assertOrderAllowed(ctx);
+      return createSandboxOrder({ ...input, conversationId: ctx.conversationId, customerId: ctx.customerId });
+    },
     label: (_input, result: unknown) => `Pedido sandbox creado: #${(result as { orderId: string }).orderId.slice(0, 8)}`,
   }),
   tool({
