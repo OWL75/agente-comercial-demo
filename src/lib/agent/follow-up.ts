@@ -3,6 +3,7 @@ import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/agent/audit";
 import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
 import { sendFollowUp } from "@/lib/agent/runtime";
+import { buildFollowUpTemplate, conversationNeedsTemplate, sendTemplateMessage } from "@/lib/agent/template-outreach";
 import { FOLLOW_UP_TOTAL, nextFollowUpStep } from "@/lib/agent/follow-up-sequence";
 
 export type FollowUpState = {
@@ -67,13 +68,16 @@ export async function simulateCustomerSilence(conversationId: string): Promise<v
   if (!state.canSimulate || !step) return;
 
   try {
-    const { reply } = await sendFollowUp(conversationId, step);
+    const viaTemplate = await conversationNeedsTemplate(conversationId);
+    const reply = viaTemplate
+      ? await sendTemplateMessage(conversationId, await buildFollowUpTemplate(conversationId, step.step))
+      : (await sendFollowUp(conversationId, step)).reply;
     if (!reply) return;
     await logAudit({
       conversationId,
       category: "system",
-      label: `Seguimiento ${step.step} de ${FOLLOW_UP_TOTAL} — ${step.title} (simulado; en producción: ${step.productionDelay})`,
-      payload: { followUpStep: step.step, simulated: true },
+      label: `Seguimiento ${step.step} de ${FOLLOW_UP_TOTAL} — ${step.title} (simulado; en producción: ${step.productionDelay}; ${viaTemplate ? "enviado como plantilla" : "texto libre en ventana abierta"})`,
+      payload: { followUpStep: step.step, simulated: true, viaTemplate },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

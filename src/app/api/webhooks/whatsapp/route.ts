@@ -3,6 +3,8 @@ import { verifyMetaSignature } from "@/lib/channel/verify-signature";
 import { findOpenConversationByPhone } from "@/lib/agent/conversation-lifecycle";
 import { runAgentTurn } from "@/lib/agent/runtime";
 import { logAudit } from "@/lib/agent/audit";
+import { recordOptOutButton } from "@/lib/agent/template-outreach";
+import { isOptOutButtonText } from "@/lib/channel/whatsapp-templates";
 import { z } from "zod";
 
 // Meta calls this once, when the webhook URL is registered in the app
@@ -25,7 +27,15 @@ type WhatsAppMessage = {
   id: string;
   type: string;
   text?: { body: string };
+  button?: { text: string; payload?: string };
 };
+
+/** Free text, or the label of a template quick-reply button the customer tapped. */
+function messageText(message: WhatsAppMessage): string | null {
+  if (message.type === "text") return message.text?.body || null;
+  if (message.type === "button") return message.button?.text || null;
+  return null;
+}
 
 const webhookPayloadSchema = z.object({
   entry: z.array(z.object({
@@ -35,6 +45,7 @@ const webhookPayloadSchema = z.object({
         messages: z.array(z.object({
           from: z.string().regex(/^\d{5,20}$/), id: z.string().min(1).max(512),
           type: z.string(), text: z.object({ body: z.string().max(4096) }).optional(),
+          button: z.object({ text: z.string().max(256), payload: z.string().max(256).optional() }).optional(),
         })).optional(),
       }).optional(),
     })).optional(),
@@ -83,7 +94,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const messages = extractMessages(payload).filter((m) => m.type === "text" && m.text?.body);
+  const messages = extractMessages(payload).filter((m) => messageText(m) !== null);
 
   // Awaited synchronously (not fire-and-forget): simplest and platform-
   // agnostic, at the cost of a slower ack to Meta on a long tool-calling
@@ -96,10 +107,17 @@ export async function POST(request: Request) {
         conversationId: null,
         category: "system",
         label: `Mensaje de WhatsApp de ${message.from} sin conversación abierta que lo reciba — ignorado.`,
+        // Lets the 24 h service-window check see that this customer wrote first.
+        payload: { fromDigits: message.from },
       });
       continue;
     }
-    await runAgentTurn(conversationId, message.text!.body, { externalMessageId: message.id });
+    const text = messageText(message)!;
+    if (message.type === "button" && isOptOutButtonText(text)) {
+      await recordOptOutButton(conversationId, text, message.id);
+      continue;
+    }
+    await runAgentTurn(conversationId, text, { externalMessageId: message.id });
   }
 
   return NextResponse.json({ ok: true });

@@ -19,6 +19,36 @@ function requireEnv(name: string): string {
  * call site, not here.
  */
 export async function sendWhatsAppMessage(toPhone: string, body: string): Promise<{ messageId: string | null }> {
+  return postMessage({
+    messaging_product: "whatsapp",
+    to: toPhone.replace(/\D/g, ""),
+    type: "text",
+    text: { body },
+  });
+}
+
+/** Sends a Meta-approved template; the only kind of message allowed outside the 24 h window. */
+export async function sendWhatsAppTemplate(
+  toPhone: string,
+  name: string,
+  languageCode: string,
+  bodyParams: string[],
+): Promise<{ messageId: string | null }> {
+  return postMessage({
+    messaging_product: "whatsapp",
+    to: toPhone.replace(/\D/g, ""),
+    type: "template",
+    template: {
+      name,
+      language: { code: languageCode },
+      components: bodyParams.length
+        ? [{ type: "body", parameters: bodyParams.map((text) => ({ type: "text", text })) }]
+        : [],
+    },
+  });
+}
+
+async function postMessage(payload: Record<string, unknown>): Promise<{ messageId: string | null }> {
   const accessToken = requireEnv("WHATSAPP_ACCESS_TOKEN");
   const phoneNumberId = requireEnv("WHATSAPP_PHONE_NUMBER_ID");
   const apiVersion = process.env.WHATSAPP_API_VERSION || DEFAULT_API_VERSION;
@@ -29,12 +59,7 @@ export async function sendWhatsAppMessage(toPhone: string, body: string): Promis
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: toPhone.replace(/\D/g, ""),
-      type: "text",
-      text: { body },
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
