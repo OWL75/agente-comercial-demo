@@ -3,7 +3,9 @@
  * back. Pure: no network, no database. Messages are plain text (no Telegram
  * Markdown), so customer names or quotes can never break the formatting.
  */
-import { quoteMoney } from "@/lib/policy/verified-offer";
+import { quoteByNetPrice, quoteMoney } from "@/lib/policy/verified-offer";
+
+const pctLabel = (pct: number) => `${Number(pct.toFixed(2))}%`;
 
 export type OwnerAction = "approve" | "reject" | "ask_value";
 
@@ -74,7 +76,7 @@ function requestLine(a: ApprovalForOwner): string {
   const item = qty ? `${qty} × ${product}` : product;
   switch (a.type) {
     case "discount":
-      return `${a.requestedValue.pct}% de descuento en ${item}`;
+      return `${pctLabel(a.requestedValue.pct ?? 0)} de descuento en ${item}`;
     case "credit":
       return `${money(a.requestedValue.amount ?? 0)} de crédito adicional para ${item}`;
     case "delivery":
@@ -85,7 +87,7 @@ function requestLine(a: ApprovalForOwner): string {
 }
 
 export function approvalValueLabel(type: string, value: number): string {
-  if (type === "discount") return `${value}%`;
+  if (type === "discount") return pctLabel(value);
   if (type === "credit") return money(value);
   if (type === "delivery") return `${value} h`;
   return String(value);
@@ -95,8 +97,12 @@ export function formatApprovalForOwner(a: ApprovalForOwner): string {
   const lines = [`Necesito tu OK para ${a.customerName}`, "", `Pide: ${requestLine(a)}`];
   const { unitPrice, stockAvailable, creditAvailable, autonomyMaxPct } = a.context;
   const qty = a.requestedValue.quantity;
-  if (a.type === "discount" && unitPrice && qty && typeof a.requestedValue.pct === "number" && Number.isInteger(a.requestedValue.pct)) {
-    const q = quoteMoney(unitPrice, qty, a.requestedValue.pct);
+  if (a.type === "discount" && unitPrice && qty && typeof a.requestedValue.pct === "number") {
+    const pct = a.requestedValue.pct;
+    // A price-negotiated ask carries a derived percentage (e.g. 5.4054% = $17.50).
+    const q = Number.isInteger(pct)
+      ? quoteMoney(unitPrice, qty, pct)
+      : quoteByNetPrice(unitPrice, qty, Math.round(unitPrice * (100 - pct)) / 100);
     lines.push(`Precio: ${money(q.listUnitPrice)} → ${money(q.netUnitPrice)} c/u · total ${money(q.total)} (sin descuento ${money(q.subtotal)})`);
   } else if (unitPrice) {
     lines.push(`Precio de lista: ${money(unitPrice)} c/u`);

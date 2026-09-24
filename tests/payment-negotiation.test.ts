@@ -90,9 +90,9 @@ const orders = async () =>
 const tokenFrom = (text: string) => text.match(/\/pagar\/([A-Za-z0-9_-]+)/)![1];
 
 const OFFER_1776 = "Le propongo 50 unidades de Shampoo Professional 1L a $17.76 por unidad, total $888.00, con entrega en 24 horas y crédito a 30 días. ¿Confirma el pedido en estas condiciones?";
-const OFFER_1773 = "Puedo dejárselo en $17.73 por unidad: 50 unidades, total $886.50, entrega en 24 horas y crédito a 30 días. ¿Confirma el pedido en estas condiciones?";
+const OFFER_1770 = "Perfecto, se lo dejo en $17.70 por unidad: 50 unidades, total $885.00, entrega en 24 horas y crédito a 30 días. ¿Confirma el pedido en estas condiciones?";
 
-/** Customer compares with $17.75 → agent offers $17.76; customer asks $17.70 → agent counters $17.73. */
+/** Customer compares with $17.75 → agent offers $17.76; customer asks $17.70 → within margin, accepted as is. */
 async function negotiate() {
   h.script = [
     calls(
@@ -110,15 +110,15 @@ async function negotiate() {
       // What the agent did in the real conversation: 5% → $17.58, below the ask.
       tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, discountPct: 5, customerAskUnitPrice: 17.7, deliveryHours: 24 }),
     ),
-    calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.73, customerAskUnitPrice: 17.7, deliveryHours: 24 })),
-    say(OFFER_1773),
+    calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.7, customerAskUnitPrice: 17.7, deliveryHours: 24 })),
+    say(OFFER_1770),
   ];
   await runAgentTurn(conversationId, "¿Me lo puede dejar a 17.70?");
 }
 
 async function confirmWithSi() {
   h.script = [
-    calls(tool("create_sandbox_order", { items: [{ sku: "CAP-001", quantity: 50 }], netUnitPrice: 17.73, creditTerms: "30 días", deliveryHours: 24 })),
+    calls(tool("create_sandbox_order", { items: [{ sku: "CAP-001", quantity: 50 }], netUnitPrice: 17.7, creditTerms: "30 días", deliveryHours: 24 })),
     say("¡Perfecto! Su pedido quedó registrado. En el siguiente mensaje le envío cómo pagarlo."),
   ];
   await runAgentTurn(conversationId, "Si");
@@ -145,28 +145,62 @@ afterEach(() => { vi.unstubAllEnvs(); });
 afterAll(async () => { await database.close(); });
 
 describe("negotiation: never below the customer's ask", () => {
-  it("refuses the $17.58 jump when the customer asked $17.70 and suggests a $17.73 counter", async () => {
+  it("accepts $17.70 as is when it is within the margin, and refuses the jump to $17.58", async () => {
     await negotiate();
-    const [first, jump, counter] = await toolResults("prepare_verified_offer");
+    const [first, jump, accepted] = await toolResults("prepare_verified_offer");
     expect(first).toMatchObject({ status: "ready", netUnitPrice: 17.76, total: 888 });
     expect(jump).toMatchObject({
       status: "unavailable", reason: "below_customer_ask", netUnitPrice: 17.58, recommendedNetUnitPrice: 17.7,
-      negotiation: { customerAskUnitPrice: 17.7, lastOfferedUnitPrice: 17.76, autonomyFloorUnitPrice: 17.58, suggestedCounterUnitPrice: 17.73 },
+      negotiation: { customerAskUnitPrice: 17.7, lastOfferedUnitPrice: 17.76, autonomyFloorUnitPrice: 17.58, askWithinAutonomy: true, recommendedUnitPrice: 17.7 },
     });
-    expect(counter).toMatchObject({ status: "ready", netUnitPrice: 17.73, total: 886.5, discountPct: 4.1622 });
-    expect((await agentMessages()).at(-1)).toBe(OFFER_1773);
+    expect(accepted).toMatchObject({ status: "ready", netUnitPrice: 17.7, total: 885, discountPct: 4.3243 });
+    expect((await agentMessages()).at(-1)).toBe(OFFER_1770);
   });
 
-  it("keeps price concessions inside the agent's autonomy", async () => {
+  it("answers $17.50 with its best price (5% → $17.58), and asks the owner only when the customer insists", async () => {
     await negotiate();
     h.script = [
-      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.4, customerAskUnitPrice: 17.4, deliveryHours: 24 })),
-      // Any figure it states must come from an offer verified in this same turn.
-      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.73, deliveryHours: 24 })),
-      say("Mi mejor precio hoy es $17.73 por unidad. ¿Le funciona para cerrarlo?"),
+      calls(tool("save_customer_insight", { precioObjetivo: 17.5 }),
+        tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.5, customerAskUnitPrice: 17.5, deliveryHours: 24 })),
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, discountPct: 5, customerAskUnitPrice: 17.5, deliveryHours: 24 })),
+      say("Entiendo. Lo máximo que puedo rebajarle es un 5%: quedaría en $17.58 por unidad, total $879.00, con entrega en 24 horas. ¿Le funciona?"),
     ];
-    await runAgentTurn(conversationId, "Déjemelo a 17.40 y cerramos.");
-    expect((await toolResults("prepare_verified_offer")).at(-2)).toMatchObject({ status: "unavailable", reason: "price_beyond_autonomy", recommendedNetUnitPrice: 17.58 });
+    await runAgentTurn(conversationId, "No, déjamelo a 17.50.");
+    const [probe, best] = (await toolResults("prepare_verified_offer")).slice(-2);
+    expect(probe).toMatchObject({
+      status: "approval_required", approvalsNeeded: ["discount"], reason: "below_autonomy_floor", recommendedNetUnitPrice: 17.58,
+      negotiation: { askWithinAutonomy: false, recommendedUnitPrice: 17.58 },
+    });
+    expect(best).toMatchObject({ status: "ready", netUnitPrice: 17.58, total: 879, discountPct: 5 });
+    expect((await database.query("select id from agente_comercial.approvals")).rows).toEqual([]);
+
+    // The customer insists: now the owner decides the exact $17.50.
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.5, customerAskUnitPrice: 17.5, deliveryHours: 24 })),
+      calls(tool("request_approval", { type: "discount", productSku: "CAP-001", quantity: 50, requestedPct: 5.4054, reason: "Insiste en $17.50 para cerrar 50 unidades", agentRecommendation: "Aprobar: recupera al cliente" })),
+      say("Entiendo. Lo consulto con Abdiel y le escribo en unos minutos."),
+    ];
+    await runAgentTurn(conversationId, "Si no es a 17.50 no te compro.");
+    const request = h.telegram.at(-1)!;
+    expect(request.text).toContain("Pide: 5.41% de descuento en 50 × Shampoo Professional 1L");
+    expect(request.text).toContain("$18.50 → $17.50 c/u · total $875.00");
+    const { rows: [approval] } = await database.query<{ id: string }>("select id from agente_comercial.approvals");
+
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.5, customerAskUnitPrice: 17.5, deliveryHours: 24 })),
+      say("Ya lo consulté: se lo dejo en $17.50 por unidad, total $875.00, con entrega en 24 horas y crédito a 30 días. ¿Confirma el pedido en estas condiciones?"),
+    ];
+    await handleTelegramUpdate({
+      update_id: 77, callback_query: { id: "cb", from: { id: 555001 }, data: `ap:${approval.id}:5.4054`, message: { message_id: request.messageId, chat: { id: 555001 } } },
+    });
+    expect((await agentMessages()).at(-1)).toMatch(/^Ya lo consulté: se lo dejo en \$17\.50/);
+
+    h.script = [
+      calls(tool("create_sandbox_order", { items: [{ sku: "CAP-001", quantity: 50 }], netUnitPrice: 17.5, creditTerms: "30 días", deliveryHours: 24 })),
+      say("¡Listo! Pedido registrado; en el siguiente mensaje le envío cómo pagarlo."),
+    ];
+    await runAgentTurn(conversationId, "Si");
+    expect(await orders()).toEqual([{ total: "875", discount_pct: "5.4054", status: "pendiente_pago" }]);
   });
 });
 
@@ -175,19 +209,19 @@ describe("confirmation: a 'Sí' to '¿Confirma el pedido?' creates the order, on
     await negotiate();
     await confirmWithSi();
 
-    expect(await orders()).toEqual([{ total: "886.5", discount_pct: "4.1622", status: "pendiente_pago" }]);
+    expect(await orders()).toEqual([{ total: "885", discount_pct: "4.3243", status: "pendiente_pago" }]);
     const messages = await agentMessages();
     expect(messages.at(-2)).toMatch(/pedido quedó registrado/);
-    expect(messages.at(-1)).toMatch(/^Su pedido #[A-Z0-9]{8} de \$886\.50 quedó registrado con crédito a 30 días, con vencimiento el/);
+    expect(messages.at(-1)).toMatch(/^Su pedido #[A-Z0-9]{8} de \$885\.00 quedó registrado con crédito a 30 días, con vencimiento el/);
     expect(messages.at(-1)).toMatch(/Pagar pedido: https:\/\/demo\.test\/pagar\/[A-Za-z0-9_-]{32}$/);
     expect(h.telegram.at(-1)!.text).toContain("🧾 Pedido confirmado — Distribuidora Belleza del Istmo");
-    expect(h.telegram.at(-1)!.text).toContain("50 × Shampoo Professional 1L a $17.73 c/u");
+    expect(h.telegram.at(-1)!.text).toContain("50 × Shampoo Professional 1L a $17.70 c/u");
   });
 
   it("does not take a bare 'Si' as a confirmation when no confirmation was asked", async () => {
     await negotiate();
     h.script = [
-      calls(tool("create_sandbox_order", { items: [{ sku: "CAP-001", quantity: 50 }], netUnitPrice: 17.73, creditTerms: "30 días", deliveryHours: 24 })),
+      calls(tool("create_sandbox_order", { items: [{ sku: "CAP-001", quantity: 50 }], netUnitPrice: 17.7, creditTerms: "30 días", deliveryHours: 24 })),
       say("Perfecto. ¿Quiere que deje listas las 50 unidades en las condiciones que conversamos?"),
     ];
     await database.query("insert into agente_comercial.messages (conversation_id, direction, sender, body) values ($1,'outbound','agent','¿Qué día le conviene la entrega?')", [conversationId]);
@@ -198,8 +232,8 @@ describe("confirmation: a 'Sí' to '¿Confirma el pedido?' creates the order, on
   it("rewrites a reply that re-presents the same offer instead of moving forward", async () => {
     await negotiate();
     h.script = [
-      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.73, deliveryHours: 24 })),
-      say(OFFER_1773),
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.7, deliveryHours: 24 })),
+      say(OFFER_1770),
       say("Con gusto. ¿Le parece si lo dejamos así y lo ingreso ahora?"),
     ];
     await runAgentTurn(conversationId, "Mucho mejor");
@@ -218,14 +252,14 @@ describe("payment collection without a human", () => {
 
   it("marks the order paid once, thanks the customer and tells the owner", async () => {
     const token = await orderAndToken();
-    expect(await findPayment(token)).toMatchObject({ status: "pendiente_pago", total: 886.5, terms: "30 días" });
+    expect(await findPayment(token)).toMatchObject({ status: "pendiente_pago", total: 885, terms: "30 días" });
 
     await expect(markPaymentReceived(token, "yappy")).resolves.toEqual({ alreadyPaid: false });
     await expect(markPaymentReceived(token, "yappy")).resolves.toEqual({ alreadyPaid: true });
 
     expect((await orders())[0].status).toBe("pagado");
     const payments = (await agentMessages()).filter((m) => m.startsWith("Recibimos su pago"));
-    expect(payments).toEqual(["Recibimos su pago de $886.50 del pedido #" + (await findPayment(token))!.orderShort + " (Yappy, pago de prueba). ¡Muchas gracias! Coordinamos la entrega de 50 unidades de Shampoo Professional 1L."]);
+    expect(payments).toEqual(["Recibimos su pago de $885.00 del pedido #" + (await findPayment(token))!.orderShort + " (Yappy, pago de prueba). ¡Muchas gracias! Coordinamos la entrega de 50 unidades de Shampoo Professional 1L."]);
     expect(h.telegram.filter((m) => m.text.startsWith("💰 Pago recibido"))).toHaveLength(1);
   });
 

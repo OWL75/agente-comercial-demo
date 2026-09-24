@@ -53,13 +53,15 @@ describe("sales playbook", () => {
 
   it("no longer tells the agent to counter-offer the maximum approvable discount", () => {
     expect(prompt).not.toMatch(/ofrece como máximo el límite autorizable/);
-    expect(prompt).toMatch(/Nunca concedas de una vez el máximo/);
+    expect(prompt).toMatch(/Nunca concedas de una vez más de lo que el cliente pidió ni el máximo autorizable/);
   });
 
-  it("negotiates like a salesperson: holds price, never goes under the ask, concedes in steps", () => {
+  it("negotiates like a salesperson: holds price, accepts a good ask, offers its best price below the margin", () => {
     expect(prompt).toMatch(/Si el cliente no pide rebaja, sostén el precio de lista/);
     expect(prompt).toMatch(/Nunca ofrezcas por debajo de lo que pidió/);
-    expect(prompt).toMatch(/Cada concesión siguiente es más pequeña/);
+    expect(prompt).toMatch(/Si su precio queda dentro de tu margen .* acéptalo tal cual/);
+    expect(prompt).toMatch(/Si pide por debajo de tu margen, no lo aceptes de una vez: ofrece tu mejor precio/);
+    expect(prompt).toMatch(/Solo si insiste en su precio, solicita la aprobación/);
     expect(prompt).toContain("netUnitPrice");
   });
 

@@ -165,11 +165,11 @@ const NEGOTIATION = [
   "No ofrezcas un descuento apenas aparece una objeción ni lo uses como única forma de vender: primero entiende la causa y presenta el valor verificable (disponibilidad, entrega, crédito vigente, pedido de prueba).",
   "Antes de negociar precio entiende producto, cantidad, entrega y riesgo para el cliente.",
   "Si el cliente no pide rebaja, sostén el precio de lista. Una referencia del competidor sin pedido de rebaja se responde primero con valor (entrega, disponibilidad, crédito); iguala solo si insiste en el precio.",
-  "Cuando pida un precio concreto, guárdalo como precioObjetivo y pásalo como customerAskUnitPrice. Nunca ofrezcas por debajo de lo que pidió: si pide 17.70, jamás respondas 17.58.",
-  "Negocia por pasos y al centavo con netUnitPrice, como en una negociación real: primero sostén tu precio o contraoferta entre tu última oferta y lo que pide (negotiation.suggestedCounterUnitPrice). Cada concesión siguiente es más pequeña y solo si insiste; llega a su precio exacto solo si lo vuelve a pedir o es lo que cierra la venta.",
-  "Al conceder, pide algo a cambio cuando sea natural: confirmar hoy o mantener el volumen.",
-  "Cuando negocias por precio (netUnitPrice), presenta el precio por unidad y el total, no un porcentaje de descuento.",
-  "Nunca concedas de una vez el máximo autónomo ni el máximo autorizable. Si pide menos que tu piso (negotiation.autonomyFloorUnitPrice), ofrece tu mejor precio y, si insiste, solicita aprobación con request_approval (porcentaje entero) con tu recomendación.",
+  "Cuando pida un precio concreto, guárdalo como precioObjetivo y verifícalo con prepare_verified_offer usando netUnitPrice igual a lo que pidió y customerAskUnitPrice. Nunca ofrezcas por debajo de lo que pidió: si pide 17.70, jamás respondas 17.58.",
+  "Si su precio queda dentro de tu margen (status ready, negotiation.askWithinAutonomy), acéptalo tal cual con naturalidad (\"Perfecto, se lo dejo en $17.70 por unidad\") y pide la confirmación. No contraofertes ni bajes más de lo que pidió.",
+  "Si pide por debajo de tu margen, no lo aceptes de una vez: ofrece tu mejor precio (negotiation.recommendedUnitPrice, el tope de tu autonomía) de forma profesional, por ejemplo \"Le puedo rebajar un 5%, quedaría en $17.58 por unidad. ¿Le funciona?\". Solo si insiste en su precio, solicita la aprobación con request_approval usando el discountPct que devolvió la herramienta, y dile que lo consultas.",
+  "Nunca concedas de una vez más de lo que el cliente pidió ni el máximo autorizable.",
+  "Si el precio sale de un porcentaje entero (discountPct) puedes mencionarlo; con netUnitPrice presenta el precio por unidad y el total, no un porcentaje con decimales.",
   "Solicita aprobación humana solo cuando la herramienta indique que la condición excede tu autonomía; si indica \"auto_approve\", resuélvelo tú.",
 ];
 

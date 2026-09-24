@@ -7,8 +7,8 @@ import {
   autonomyFloorUnitPrice,
   quoteByNetPrice,
   quoteMoney,
+  recommendedResponseUnitPrice,
   smallestNaturalDiscount,
-  suggestedCounterUnitPrice,
 } from "@/lib/policy/verified-offer";
 import { uuidLike } from "@/lib/zod-helpers";
 
@@ -64,7 +64,10 @@ export type VerifiedOfferResult = {
     customerAskUnitPrice: number | null;
     lastOfferedUnitPrice: number | null;
     autonomyFloorUnitPrice: number;
-    suggestedCounterUnitPrice: number | null;
+    /** The ask is within the agent's margin: accept it as is. */
+    askWithinAutonomy: boolean | null;
+    /** The price to answer with: the ask if within the margin, else the floor. */
+    recommendedUnitPrice: number | null;
   };
   roundingRule: "round_net_unit_to_cent_then_multiply";
 };
@@ -134,11 +137,13 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
     order by created_at desc limit 1
   `;
   const lastOffered = lastPresented?.net == null ? null : Number(lastPresented.net);
+  const response = target == null ? null : recommendedResponseUnitPrice(target, floor);
   const negotiation: NonNullable<VerifiedOfferResult["negotiation"]> = {
     customerAskUnitPrice: target,
     lastOfferedUnitPrice: lastOffered,
     autonomyFloorUnitPrice: floor,
-    suggestedCounterUnitPrice: target == null ? null : suggestedCounterUnitPrice(lastOffered ?? unitPrice, target, floor),
+    askWithinAutonomy: response?.withinAutonomy ?? null,
+    recommendedUnitPrice: response?.unitPrice ?? null,
   };
 
   const base: Omit<VerifiedOfferResult, "status" | "approvalsNeeded"> = {
@@ -169,11 +174,6 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
       reason: "below_customer_ask",
       recommendedNetUnitPrice: Math.max(target, floor),
     };
-  }
-  // Price-based concessions stay inside the agent's autonomy; beyond it the
-  // owner decides a whole-percent discount through request_approval.
-  if (byPrice && discountPct > policy.config.discount.autoMaxPct + 1e-9) {
-    return { ...base, status: "unavailable", approvalsNeeded: [], reason: "price_beyond_autonomy", recommendedNetUnitPrice: floor };
   }
   if (recommended !== null && discountPct > recommended) {
     return {
@@ -234,10 +234,14 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
     }
   }
 
+  // A price below the floor is the owner's call; the agent answers with its
+  // best price first and only files this if the customer insists.
+  const belowFloor = approvalsNeeded.includes("discount") && money.netUnitPrice < floor - 0.005;
   return {
     ...base,
     status: approvalsNeeded.length ? "approval_required" : "ready",
     approvalsNeeded: [...new Set(approvalsNeeded)],
+    ...(belowFloor ? { reason: "below_autonomy_floor", recommendedNetUnitPrice: floor } : {}),
   };
 }
 

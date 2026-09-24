@@ -74,3 +74,9 @@ Para producción:
 - No hay recordatorios automáticos de vencimiento para los pedidos a crédito, porque no existe un planificador de tareas.
 - El mensaje de cobro va dentro de la ventana de 24 h de WhatsApp. Si el cliente paga o escribe después de esa ventana, la confirmación requeriría una plantilla aprobada.
 - La calidad de la negociación depende del modelo; las guardas impiden ofrecer por debajo del precio pedido y regalar margen, pero no garantizan la mejor jugada.
+
+## Ajuste v2 de la negociación (regla del dueño)
+
+- **Si el precio que pide el cliente está dentro del margen del agente** (hasta 5 %, es decir, $17.58 o más para CAP-001), el agente lo acepta tal cual: "Perfecto, se lo dejo en $17.70" y pide la confirmación. No hace contraoferta y no baja más. Esto reemplaza la contraoferta a mitad de camino ($17.73) de la versión anterior.
+- **Si el precio que pide está por debajo del margen** (por ejemplo, $17.50), el agente no lo acepta de inmediato. Primero ofrece su mejor precio de forma profesional: "Le puedo rebajar un 5 %, quedaría en $17.58". Si el cliente insiste, `prepare_verified_offer` devuelve `approval_required` con `below_autonomy_floor`. El agente pide aprobación del precio exacto ($17.50 = 5.4054 %) y al dueño le llega por Telegram "$18.50 → $17.50 c/u · total $875.00". Si el dueño aprueba, el agente se lo ofrece al cliente y cierra.
+- `negotiation` devuelve `askWithinAutonomy` y `recommendedUnitPrice`: el precio pedido si está dentro del margen, o el piso si no lo está.

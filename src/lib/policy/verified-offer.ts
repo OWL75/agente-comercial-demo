@@ -85,13 +85,16 @@ export function autonomyFloorUnitPrice(unitPrice: number, autoMaxPct: number): n
 }
 
 /**
- * A counter-offer halfway between our last offer and what we could reach
- * (the ask, or our floor if the ask is below it), rounded up to the cent:
- * conceding half the gap keeps margin and leaves room for another, smaller
- * step if the customer insists. Never below the ask or the floor.
+ * How to answer a price the customer asks for. Within the agent's margin the
+ * ask is simply accepted: it is already a good price, so there is no reason
+ * to counter or to give more. Below the margin the answer is the agent's
+ * best price (the floor), never the ask at once; only if the customer
+ * insists does the owner decide on the exact ask.
  */
-export function suggestedCounterUnitPrice(lastOffered: number, ask: number, floor: number): number {
-  const lower = Math.max(ask, floor);
-  if (lastOffered <= lower) return Math.round(lower * 100) / 100;
-  return Math.max(lower, Math.ceil(((lastOffered + lower) / 2) * 100 - 1e-9) / 100);
+export function recommendedResponseUnitPrice(ask: number, floor: number): { withinAutonomy: boolean; unitPrice: number } {
+  const askCents = Math.round(ask * 100);
+  const floorCents = Math.round(floor * 100);
+  return askCents >= floorCents
+    ? { withinAutonomy: true, unitPrice: askCents / 100 }
+    : { withinAutonomy: false, unitPrice: floorCents / 100 };
 }
