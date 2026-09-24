@@ -11,6 +11,8 @@ El catálogo que usa la aplicación vive en `src/lib/channel/whatsapp-templates.
 
 El primer contacto identifica a Nova Distribution, usa un dato pertinente y termina en una pregunta concreta. Los seguimientos cambian de enfoque: estado de inventario, información útil, posible objeción y cierre. No se inventan promociones, descuentos, reservas ni urgencias. Precio y disponibilidad se leen del catálogo actual; si faltan, se usa otra plantilla.
 
+Para prospectos que todavía no tienen relación ni consentimiento, es preferible crear una entrada iniciada por ellos: enlace o código QR de WhatsApp en la web y materiales comerciales, o [anuncios de Facebook e Instagram que abren el chat](https://whatsappbusiness.com/products/ads-that-click-to-whatsapp/). El prospecto decide escribir y el agente puede responder dentro de la ventana de servicio. Esta vía complementa, pero no reemplaza, las plantillas para reactivar contactos con consentimiento fuera de esa ventana.
+
 ## Modo demo y producción
 
 - `WHATSAPP_TEMPLATE_MODE=simulate`: el sistema usa el texto exacto del catálogo, sin botones, en todas las aperturas y seguimientos. Se envía como mensaje de texto por WhatsApp Cloud API. El teléfono demo debe haber escrito al número del agente en las últimas 24 horas, ya que esta simulación no abre una excepción en Meta. Para repetir la demo: reiniciar el escenario, enviar `Hola` desde el teléfono demo y después iniciar la conversación.
