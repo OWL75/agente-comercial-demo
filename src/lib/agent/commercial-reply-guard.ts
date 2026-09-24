@@ -156,3 +156,10 @@ const INTERNAL_LANGUAGE = /\b(verificad[ao]s?|recuperar(?:lo|la)?\s+(?:su|el|la|
 export function usesInternalLanguage(text: string): boolean {
   return INTERNAL_LANGUAGE.test(text);
 }
+
+// "¿Le cotizo…?" asks permission for a step the agent should just take.
+const PERMISSION_TO_QUOTE = /¿[^?]*\b(?:le|te)\s+(?:cotizo|coticemos|preparo\s+(?:una|la)\s+cotizaci[oó]n|armo\s+(?:una|la)\s+propuesta)\b|\bquiere\s+que\s+le\s+(?:cotice|prepare\s+una\s+cotizaci[oó]n)\b/i;
+
+export function asksPermissionToQuote(text: string): boolean {
+  return PERMISSION_TO_QUOTE.test(text);
+}

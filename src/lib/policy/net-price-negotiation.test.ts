@@ -40,3 +40,18 @@ describe("next concession", () => {
     expect(nextConcession({ ...base, lastOffered: null, ask: null })).toEqual({ unitPrice: 18, basis: "step", withinAutonomy: true });
   });
 });
+
+describe("first offer once the competitor's price is known", () => {
+  it("real case 21:16 UTC: competitor at $17.75, nothing offered yet → match $17.75", () => {
+    expect(nextConcession({ ...base, lastOffered: null, ask: null, reference: 17.75 })).toEqual({ unitPrice: 17.75, basis: "match_reference", withinAutonomy: true });
+  });
+
+  it("a reference below the floor gets the best price, and one above list is ignored", () => {
+    expect(nextConcession({ ...base, lastOffered: null, ask: null, reference: 17.2 })).toEqual({ unitPrice: 17.58, basis: "floor", withinAutonomy: true });
+    expect(nextConcession({ ...base, lastOffered: null, ask: null, reference: 19 })).toEqual({ unitPrice: 18, basis: "step", withinAutonomy: true });
+  });
+
+  it("after the match, a request for a better price still steps down", () => {
+    expect(nextConcession({ ...base, lastOffered: 17.75, ask: null, reference: 17.75 })).toEqual({ unitPrice: 17.65, basis: "step", withinAutonomy: true });
+  });
+});

@@ -70,7 +70,7 @@ export type VerifiedOfferResult = {
     askWithinAutonomy: boolean | null;
     /** The next price to offer (see nextConcession). */
     recommendedUnitPrice: number | null;
-    recommendationBasis: "ask" | "step" | "floor" | "at_floor";
+    recommendationBasis: "ask" | "match_reference" | "step" | "floor" | "at_floor";
   };
   roundingRule: "round_net_unit_to_cent_then_multiply";
 };
@@ -146,7 +146,7 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
   const recommended = reference == null || byPrice || lastOffered != null
     ? null
     : smallestNaturalDiscount(unitPrice, reference, policy.config.discount.autoMaxPct);
-  const concession = nextConcession({ listUnitPrice: unitPrice, lastOffered, ask: target, floor });
+  const concession = nextConcession({ listUnitPrice: unitPrice, lastOffered, ask: target, floor, reference });
   const negotiation: NonNullable<VerifiedOfferResult["negotiation"]> = {
     customerAskUnitPrice: target,
     referenceUnitPrice: reference,

@@ -130,3 +130,12 @@ describe("internal language", () => {
     expect(usesInternalLanguage("Le puedo mejorar el precio a $17.65 por unidad, con entrega al día siguiente.")).toBe(false);
   });
 });
+
+describe("asking permission to quote", () => {
+  it("flags the real message and similar ones", async () => {
+    const { asksPermissionToQuote } = await import("@/lib/agent/commercial-reply-guard");
+    expect(asksPermissionToQuote("Para compararle en esas mismas condiciones, ¿le cotizo las 50 unidades de su último pedido?")).toBe(true);
+    expect(asksPermissionToQuote("¿Quiere que le cotice el pedido de siempre?")).toBe(true);
+    expect(asksPermissionToQuote("Le puedo igualar ese precio: 50 unidades a $17.75. ¿Se lo preparo?")).toBe(false);
+  });
+});

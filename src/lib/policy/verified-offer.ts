@@ -86,8 +86,8 @@ export function autonomyFloorUnitPrice(unitPrice: number, autoMaxPct: number): n
 
 export type Concession = {
   unitPrice: number;
-  /** ask: accept the customer's price · step: a small improvement · floor: the agent's best price · at_floor: only the owner can go lower. */
-  basis: "ask" | "step" | "floor" | "at_floor";
+  /** ask: accept the customer's price · match_reference: first offer, match the competitor · step: a small improvement · floor: the agent's best price · at_floor: only the owner can go lower. */
+  basis: "ask" | "match_reference" | "step" | "floor" | "at_floor";
   withinAutonomy: boolean;
 };
 
@@ -101,8 +101,19 @@ export type Concession = {
  *   little room is left, go to the floor ($17.58); at the floor, only the
  *   owner can go lower. A competitor's price is a reference, never a floor.
  */
-export function nextConcession(args: { listUnitPrice: number; lastOffered: number | null; ask: number | null; floor: number }): Concession {
+export function nextConcession(args: { listUnitPrice: number; lastOffered: number | null; ask: number | null; floor: number; reference?: number | null }): Concession {
   const floorCents = Math.round(args.floor * 100);
+  // First offer once the competitor's price is known: match it (within the
+  // margin) — the customer already told us what it takes to win the order.
+  if (args.ask == null && args.lastOffered == null && args.reference != null) {
+    const referenceCents = Math.round(args.reference * 100);
+    const listCents = Math.round(args.listUnitPrice * 100);
+    if (referenceCents < listCents) {
+      return referenceCents >= floorCents
+        ? { unitPrice: referenceCents / 100, basis: "match_reference", withinAutonomy: true }
+        : { unitPrice: floorCents / 100, basis: "floor", withinAutonomy: true };
+    }
+  }
   if (args.ask != null) {
     const askCents = Math.round(args.ask * 100);
     return askCents >= floorCents

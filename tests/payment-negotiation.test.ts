@@ -487,3 +487,21 @@ describe("real conversation 2026-09-24 16:38 UTC: plain commercial language", ()
     expect((await agentMessages()).at(-1)).toMatch(/^Perfecto, le igualo ese precio/);
   });
 });
+
+describe("real conversation 2026-09-24 21:17 UTC: quote directly, don't ask permission", () => {
+  it("rewrites '¿le cotizo las 50 unidades?' into the matching offer", async () => {
+    await database.query("insert into agente_comercial.customer_insights (conversation_id, customer_id, producto_interes, precio_objetivo, opt_out) values ($1, $2, 'Shampoo Professional 1L', 17.75, false)", [conversationId, customerId]);
+    const MATCH = "Le puedo igualar ese precio: 50 unidades de Shampoo Professional 1L a $17.75 por unidad, total $887.50, con entrega al día siguiente y crédito a 30 días. ¿Me confirma el pedido?";
+    h.script = [
+      say("Gracias, lo tomo como referencia: su proveedor le ofrece el Shampoo Professional 1L a $17.75 por unidad y entrega al día siguiente. Para compararle en esas mismas condiciones, ¿le cotizo las 50 unidades de su último pedido?"),
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.75, deliveryHours: 24 })),
+      say(MATCH),
+    ];
+    await runAgentTurn(conversationId, "17.75");
+    expect((await agentMessages()).at(-1)).toBe(MATCH);
+    expect((await toolResults("prepare_verified_offer")).at(-1)).toMatchObject({
+      status: "ready", total: 887.5, negotiation: { referenceUnitPrice: 17.75, recommendedUnitPrice: 17.75, recommendationBasis: "match_reference" },
+    });
+    expect(h.script).toHaveLength(0);
+  });
+});
