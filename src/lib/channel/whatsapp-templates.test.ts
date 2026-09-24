@@ -3,6 +3,7 @@ import {
   FOLLOW_UP_TEMPLATES,
   WHATSAPP_TEMPLATES,
   countPlaceholders,
+  isExplicitOptOutText,
   isOptOutButtonText,
   openingTemplateForSignal,
   renderTemplate,
@@ -21,9 +22,7 @@ describe("templates satisfy Meta's creation rules", () => {
     const words = t.body.replace(/\{\{\d+\}\}/g, "").split(/\s+/).filter(Boolean).length;
     expect(words).toBeGreaterThanOrEqual(3 * placeholders + 1);
     expect(t.body.length).toBeLessThanOrEqual(1024);
-    expect(t.buttons.length).toBeGreaterThan(0);
-    expect(t.buttons.length).toBeLessThanOrEqual(3);
-    for (const b of t.buttons) expect(b.text.length).toBeLessThanOrEqual(20);
+    expect(t).not.toHaveProperty("buttons");
     expect(t.name).toMatch(/^[a-z0-9_]+$/);
   });
 });
@@ -31,7 +30,7 @@ describe("templates satisfy Meta's creation rules", () => {
 describe("renderTemplate", () => {
   it("fills placeholders in order", () => {
     expect(renderTemplate("seguimiento_recordatorio", ["Empresa Demo", "Shampoo Professional 1L"])).toBe(
-      "Hola Empresa Demo, solo quería retomar lo que te comenté sobre Shampoo Professional 1L. ¿Te preparo la cantidad habitual para tu próximo pedido?",
+      "Hola Empresa Demo, retomo mi mensaje sobre Shampoo Professional 1L. ¿Están cubiertos por ahora o prevén reponer pronto?",
     );
   });
 
@@ -64,5 +63,12 @@ describe("template selection", () => {
     expect(isOptOutButtonText("No me interesa")).toBe(true);
     expect(isOptOutButtonText(" no me interesa ")).toBe(true);
     expect(isOptOutButtonText("Ahora no")).toBe(false);
+  });
+
+  it("only stops outreach automatically for clear written requests", () => {
+    expect(isExplicitOptOutText("No me escriban más")).toBe(true);
+    expect(isExplicitOptOutText("STOP")).toBe(true);
+    expect(isExplicitOptOutText("Ahora no")).toBe(false);
+    expect(isExplicitOptOutText("No me interesa el precio, pero sí el producto")).toBe(false);
   });
 });

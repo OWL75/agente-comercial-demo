@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { sqlMock, logAuditMock, sendWhatsAppTemplateMock, sendWhatsAppInteractiveButtonsMock } = vi.hoisted(() => ({
+const { sqlMock, logAuditMock, sendWhatsAppTemplateMock, sendWhatsAppMessageMock } = vi.hoisted(() => ({
   sqlMock: vi.fn(),
   logAuditMock: vi.fn(),
   sendWhatsAppTemplateMock: vi.fn(),
-  sendWhatsAppInteractiveButtonsMock: vi.fn(),
+  sendWhatsAppMessageMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ sql: sqlMock }));
@@ -15,7 +15,7 @@ vi.mock("@/lib/agent/contact-permission", () => ({ isCustomerSuppressed: vi.fn()
 vi.mock("@/lib/channel/whatsapp-client", () => ({
   isWhatsAppConfigured: () => Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
   sendWhatsAppTemplate: sendWhatsAppTemplateMock,
-  sendWhatsAppInteractiveButtons: sendWhatsAppInteractiveButtonsMock,
+  sendWhatsAppMessage: sendWhatsAppMessageMock,
 }));
 vi.mock("@/lib/db/customer-detail", () => ({ getFrequentProducts: vi.fn() }));
 vi.mock("@/lib/tools/customer", () => ({ saveCustomerInsight: vi.fn() }));
@@ -46,7 +46,7 @@ describe("template outreach delivery modes", () => {
     expect(sqlMock).not.toHaveBeenCalled();
   });
 
-  it("sends the exact copy with interactive buttons when the demo phone opened the service window", async () => {
+  it("sends the exact copy as text without buttons in demo mode", async () => {
     sqlMock
       .mockResolvedValueOnce([target])
       .mockResolvedValueOnce([]);
@@ -54,19 +54,14 @@ describe("template outreach delivery modes", () => {
     await expect(
       sendTemplateMessage("conversation-1", {
         name: "apertura_recompra",
-        params: ["Empresa Demo", "42", "Shampoo Professional 1L"],
+        params: ["Empresa Demo", "Shampoo Professional 1L"],
       }),
     ).resolves.toContain("Hola Empresa Demo");
 
     expect(sendWhatsAppTemplateMock).not.toHaveBeenCalled();
-    expect(sendWhatsAppInteractiveButtonsMock).toHaveBeenCalledWith(
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledWith(
       "+50760000000",
-      expect.stringContaining("42 días"),
-      [
-        { id: "demo_apertura_recompra_1", title: "Sí, prepárala" },
-        { id: "demo_apertura_recompra_2", title: "Ahora no" },
-        { id: "demo_apertura_recompra_3", title: "No me interesa" },
-      ],
+      expect.stringContaining("¿Cambió algo en la demanda"),
     );
     expect(logAuditMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -84,11 +79,11 @@ describe("template outreach delivery modes", () => {
     await expect(
       sendTemplateMessage("conversation-1", {
         name: "apertura_recompra",
-        params: ["Empresa Demo", "42", "Shampoo Professional 1L"],
+        params: ["Empresa Demo", "Shampoo Professional 1L"],
       }),
     ).resolves.toContain("Hola Empresa Demo");
 
-    expect(sendWhatsAppInteractiveButtonsMock).toHaveBeenCalledOnce();
+    expect(sendWhatsAppMessageMock).toHaveBeenCalledOnce();
     expect(logAuditMock).toHaveBeenCalledWith(
       expect.objectContaining({
         payload: { template: "apertura_recompra", deliveryMode: "simulate" },

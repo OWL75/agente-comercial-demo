@@ -3,8 +3,8 @@ import { verifyMetaSignature } from "@/lib/channel/verify-signature";
 import { findOpenConversationByPhone } from "@/lib/agent/conversation-lifecycle";
 import { runAgentTurn } from "@/lib/agent/runtime";
 import { logAudit } from "@/lib/agent/audit";
-import { recordOptOutButton } from "@/lib/agent/template-outreach";
-import { isOptOutButtonText } from "@/lib/channel/whatsapp-templates";
+import { recordOptOutRequest } from "@/lib/agent/template-outreach";
+import { isExplicitOptOutText, isOptOutButtonText } from "@/lib/channel/whatsapp-templates";
 import { z } from "zod";
 
 // Meta calls this once, when the webhook URL is registered in the app
@@ -124,8 +124,9 @@ export async function POST(request: Request) {
       continue;
     }
     const text = messageText(message)!;
-    if ((message.type === "button" || message.type === "interactive") && isOptOutButtonText(text)) {
-      await recordOptOutButton(conversationId, text, message.id);
+    if ((message.type === "text" && isExplicitOptOutText(text)) ||
+        ((message.type === "button" || message.type === "interactive") && isOptOutButtonText(text))) {
+      await recordOptOutRequest(conversationId, text, message.id);
       continue;
     }
     await runAgentTurn(conversationId, text, { externalMessageId: message.id });

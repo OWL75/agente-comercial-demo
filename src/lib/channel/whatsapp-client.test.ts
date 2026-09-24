@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
-  sendWhatsAppInteractiveButtons,
   sendWhatsAppMessage,
   sendWhatsAppTemplate,
 } from "@/lib/channel/whatsapp-client";
@@ -92,52 +91,5 @@ describe("sendWhatsAppTemplate", () => {
       vi.fn().mockResolvedValue(new Response('{"error":{"code":132001}}', { status: 404 })),
     );
     await expect(sendWhatsAppTemplate("50766013325", "no_existe", "es", [])).rejects.toThrow("132001");
-  });
-});
-
-describe("sendWhatsAppInteractiveButtons", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-    process.env.WHATSAPP_ACCESS_TOKEN = "test-token";
-    process.env.WHATSAPP_PHONE_NUMBER_ID = "123456789";
-  });
-
-  it("sends the simulated template body with reply buttons", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ messages: [{ id: "wamid.interactive" }] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await sendWhatsAppInteractiveButtons("+507 6601-3325", "Hola Empresa Demo", [
-      { id: "demo_apertura_1", title: "Sí, prepárala" },
-      { id: "demo_apertura_2", title: "Ahora no" },
-    ]);
-
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: "50766013325",
-      type: "interactive",
-      interactive: {
-        type: "button",
-        body: { text: "Hola Empresa Demo" },
-        action: {
-          buttons: [
-            { type: "reply", reply: { id: "demo_apertura_1", title: "Sí, prepárala" } },
-            { type: "reply", reply: { id: "demo_apertura_2", title: "Ahora no" } },
-          ],
-        },
-      },
-    });
-  });
-
-  it("rejects an invalid button count before calling Meta", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    await expect(sendWhatsAppInteractiveButtons("50766013325", "Hola", [])).rejects.toThrow("entre 1 y 3");
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -4,13 +4,12 @@ import { logAudit } from "@/lib/agent/audit";
 import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
 import {
   isWhatsAppConfigured,
-  sendWhatsAppInteractiveButtons,
+  sendWhatsAppMessage,
   sendWhatsAppTemplate,
 } from "@/lib/channel/whatsapp-client";
 import {
   FOLLOW_UP_TEMPLATES,
   TEMPLATE_LANGUAGE,
-  WHATSAPP_TEMPLATES,
   openingTemplateForSignal,
   renderTemplate,
   sanitizeTemplateParam,
@@ -26,7 +25,7 @@ const FALLBACK_PRODUCT = "tus productos habituales";
 export type TemplateDeliveryMode = "disabled" | "simulate" | "meta";
 
 /**
- * simulate: exact template copy + session-window interactive buttons for demos.
+ * simulate: exact template copy as a session-window text message for demos.
  * meta: approved Meta template payload for production outreach outside 24 h.
  */
 export function templateDeliveryMode(): TemplateDeliveryMode {
@@ -113,7 +112,7 @@ async function buildChoice(target: OutreachTarget, preferred: TemplateName): Pro
 
   if (preferred === "apertura_recompra") {
     if (product && target.daysSinceLastPurchase != null) {
-      return { name: preferred, params: [name, String(target.daysSinceLastPurchase), productName] };
+      return { name: preferred, params: [name, productName] };
     }
     return { name: "apertura_reactivacion", params: [name, productName] };
   }
@@ -171,14 +170,7 @@ export async function sendTemplateMessage(conversationId: string, choice: Templa
       // Do not second-guess Meta with a local timestamp. Resetting the demo can
       // delete the conversation that contained the inbound message while the
       // provider's real 24 h session is still open. Meta remains authoritative.
-      await sendWhatsAppInteractiveButtons(
-        target.customerPhone,
-        text,
-        WHATSAPP_TEMPLATES[choice.name].buttons.map((button, index) => ({
-          id: `demo_${choice.name}_${index + 1}`,
-          title: button.text,
-        })),
-      );
+      await sendWhatsAppMessage(target.customerPhone, text);
     } else if (mode === "meta") {
       await sendWhatsAppTemplate(target.customerPhone, choice.name, TEMPLATE_LANGUAGE, choice.params);
     } else {
@@ -194,7 +186,7 @@ export async function sendTemplateMessage(conversationId: string, choice: Templa
       conversationId,
       category: "system",
       label: mode === "simulate"
-        ? `Plantilla "${choice.name}" enviada en modo demo con botones interactivos.`
+        ? `Texto de la plantilla "${choice.name}" enviado por WhatsApp en modo demo.`
         : `Plantilla "${choice.name}" enviada por Meta (ventana de 24 h cerrada).`,
       payload: { template: choice.name, deliveryMode: mode },
     });
@@ -212,11 +204,11 @@ export async function startConversationWithTemplate(conversationId: string): Pro
   await sendTemplateMessage(conversationId, await buildOpeningTemplate(conversationId));
 }
 
-/** The "No me interesa" button is an explicit refusal: record it and stop, without asking the agent to reply. */
-export async function recordOptOutButton(conversationId: string, buttonText: string, externalMessageId: string) {
+/** Records explicit written opt-outs and legacy button opt-outs without another agent reply. */
+export async function recordOptOutRequest(conversationId: string, customerText: string, externalMessageId: string) {
   const [inserted] = await sql`
     insert into agente_comercial.messages (conversation_id, direction, sender, body, external_message_id)
-    values (${conversationId}, 'inbound', 'customer', ${buttonText}, ${externalMessageId})
+    values (${conversationId}, 'inbound', 'customer', ${customerText}, ${externalMessageId})
     on conflict do nothing
     returning id
   `;
@@ -228,11 +220,11 @@ export async function recordOptOutButton(conversationId: string, buttonText: str
     conversationId,
     customerId: conversation.customer_id,
     optOut: true,
-    resumen: `El cliente tocó "${buttonText}" en una plantilla.`,
+    resumen: `El cliente pidió no recibir más mensajes: "${customerText}".`,
   });
   await logAudit({
     conversationId,
     category: "opt_out",
-    label: `El cliente tocó "${buttonText}": opt-out registrado, no se enviarán más mensajes.`,
+    label: `El cliente pidió no recibir más mensajes: opt-out registrado.`,
   });
 }

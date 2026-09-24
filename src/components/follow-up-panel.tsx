@@ -60,8 +60,8 @@ export function FollowUpPanel({
       )}
 
       <p className="text-[11px] leading-relaxed text-slate-500">
-        Si el cliente responde o pide no recibir mensajes, la secuencia se detiene. En la demo, cada toque usa
-        el texto y los botones de la plantilla simulada; en producción, se envía la plantilla aprobada por Meta.
+        Si el cliente responde o pide no recibir mensajes, la secuencia se detiene. En la demo, cada seguimiento
+        llega a WhatsApp como texto, sin botones; en producción, se envía la plantilla de texto aprobada por Meta.
       </p>
     </div>
   );

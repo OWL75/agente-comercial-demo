@@ -4,10 +4,10 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/agent/conversation-lifecycle", () => ({ findOpenConversationByPhone: vi.fn().mockResolvedValue("conversation") }));
 vi.mock("@/lib/agent/runtime", () => ({ runAgentTurn: vi.fn().mockResolvedValue({ reply: "OK" }) }));
 vi.mock("@/lib/agent/audit", () => ({ logAudit: vi.fn() }));
-vi.mock("@/lib/agent/template-outreach", () => ({ recordOptOutButton: vi.fn() }));
+vi.mock("@/lib/agent/template-outreach", () => ({ recordOptOutRequest: vi.fn() }));
 import { POST } from "./route";
 import { runAgentTurn } from "@/lib/agent/runtime";
-import { recordOptOutButton } from "@/lib/agent/template-outreach";
+import { recordOptOutRequest } from "@/lib/agent/template-outreach";
 
 const body = (phone = "phone-id") => JSON.stringify({ entry: [{ changes: [{ value: {
   metadata: { phone_number_id: phone }, messages: [{ from: "50760000000", id: "wamid.test", type: "text", text: { body: "Hola" } }],
@@ -51,11 +51,11 @@ const buttonBody = (text: string) => JSON.stringify({ entry: [{ changes: [{ valu
 it("routes a tapped template button to the agent as the customer's reply", async () => {
   expect((await POST(request(buttonBody("Sí, prepárala")))).status).toBe(200);
   expect(runAgentTurn).toHaveBeenCalledWith("conversation", "Sí, prepárala", { externalMessageId: "wamid.btn" });
-  expect(recordOptOutButton).not.toHaveBeenCalled();
+  expect(recordOptOutRequest).not.toHaveBeenCalled();
 });
 it("records an opt-out, without an agent reply, when the customer taps No me interesa", async () => {
   expect((await POST(request(buttonBody("No me interesa")))).status).toBe(200);
-  expect(recordOptOutButton).toHaveBeenCalledWith("conversation", "No me interesa", "wamid.btn");
+  expect(recordOptOutRequest).toHaveBeenCalledWith("conversation", "No me interesa", "wamid.btn");
   expect(runAgentTurn).not.toHaveBeenCalled();
 });
 
@@ -78,6 +78,13 @@ it("routes a simulated-template interactive button to the agent", async () => {
 
 it("records opt-out from a simulated-template interactive button", async () => {
   expect((await POST(request(interactiveButtonBody("No me interesa")))).status).toBe(200);
-  expect(recordOptOutButton).toHaveBeenCalledWith("conversation", "No me interesa", "wamid.interactive");
+  expect(recordOptOutRequest).toHaveBeenCalledWith("conversation", "No me interesa", "wamid.interactive");
+  expect(runAgentTurn).not.toHaveBeenCalled();
+});
+
+it("records a written opt-out without sending an agent reply", async () => {
+  const optOutBody = body().replace('"body":"Hola"', '"body":"No me escriban más"');
+  expect((await POST(request(optOutBody))).status).toBe(200);
+  expect(recordOptOutRequest).toHaveBeenCalledWith("conversation", "No me escriban más", "wamid.test");
   expect(runAgentTurn).not.toHaveBeenCalled();
 });
