@@ -58,3 +58,26 @@ it("records an opt-out, without an agent reply, when the customer taps No me int
   expect(recordOptOutButton).toHaveBeenCalledWith("conversation", "No me interesa", "wamid.btn");
   expect(runAgentTurn).not.toHaveBeenCalled();
 });
+
+const interactiveButtonBody = (title: string) => JSON.stringify({ entry: [{ changes: [{ value: {
+  metadata: { phone_number_id: "phone-id" },
+  messages: [{
+    from: "50760000000",
+    id: "wamid.interactive",
+    type: "interactive",
+    interactive: { type: "button_reply", button_reply: { id: "demo_button_1", title } },
+  }],
+} }] }] });
+
+it("routes a simulated-template interactive button to the agent", async () => {
+  expect((await POST(request(interactiveButtonBody("Sí, prepárala")))).status).toBe(200);
+  expect(runAgentTurn).toHaveBeenCalledWith("conversation", "Sí, prepárala", {
+    externalMessageId: "wamid.interactive",
+  });
+});
+
+it("records opt-out from a simulated-template interactive button", async () => {
+  expect((await POST(request(interactiveButtonBody("No me interesa")))).status).toBe(200);
+  expect(recordOptOutButton).toHaveBeenCalledWith("conversation", "No me interesa", "wamid.interactive");
+  expect(runAgentTurn).not.toHaveBeenCalled();
+});

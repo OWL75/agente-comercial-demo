@@ -2,10 +2,15 @@ import "server-only";
 import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/agent/audit";
 import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
-import { isWhatsAppConfigured, sendWhatsAppTemplate } from "@/lib/channel/whatsapp-client";
+import {
+  isWhatsAppConfigured,
+  sendWhatsAppInteractiveButtons,
+  sendWhatsAppTemplate,
+} from "@/lib/channel/whatsapp-client";
 import {
   FOLLOW_UP_TEMPLATES,
   TEMPLATE_LANGUAGE,
+  WHATSAPP_TEMPLATES,
   openingTemplateForSignal,
   renderTemplate,
   sanitizeTemplateParam,
@@ -18,9 +23,18 @@ import { formatUnitPrice } from "@/lib/format";
 
 const FALLBACK_PRODUCT = "tus productos habituales";
 
-/** Feature switch: enable only after the seven template names are approved in WhatsApp Manager. */
-export function templatesEnabled(): boolean {
-  return process.env.WHATSAPP_TEMPLATES_ENABLED === "true" && isWhatsAppConfigured();
+export type TemplateDeliveryMode = "disabled" | "simulate" | "meta";
+
+/**
+ * simulate: exact template copy + session-window interactive buttons for demos.
+ * meta: approved Meta template payload for production outreach outside 24 h.
+ */
+export function templateDeliveryMode(): TemplateDeliveryMode {
+  const configured = process.env.WHATSAPP_TEMPLATE_MODE?.trim().toLowerCase();
+  if (configured === "simulate" || configured === "meta" || configured === "disabled") return configured;
+  // Backwards compatibility with the first implementation.
+  if (process.env.WHATSAPP_TEMPLATES_ENABLED === "true") return "meta";
+  return "disabled";
 }
 
 type OutreachTarget = {
@@ -76,7 +90,10 @@ export async function hasOpenServiceWindow(customerId: string): Promise<boolean>
 }
 
 export async function conversationNeedsTemplate(conversationId: string): Promise<boolean> {
-  if (!isWhatsAppConfigured()) return false;
+  const mode = templateDeliveryMode();
+  // The demo deliberately shows the approved copy on every opening/follow-up.
+  if (mode === "simulate") return true;
+  if (mode !== "meta" || !isWhatsAppConfigured()) return false;
   const target = await loadTarget(conversationId);
   if (!target.customerPhone) return false;
   return !(await hasOpenServiceWindow(target.customerId));
@@ -130,33 +147,62 @@ export async function buildFollowUpTemplate(conversationId: string, step: number
  */
 export async function sendTemplateMessage(conversationId: string, choice: TemplateChoice): Promise<string> {
   const target = await loadTarget(conversationId);
-  if (!target.customerPhone || (await isCustomerSuppressed(target.customerId))) return "";
-
-  // Never fall back to free text outside the service window. Until Meta has
-  // approved the templates and the switch is enabled, keep the outreach
-  // blocked and visible in the audit trail instead of violating channel rules.
-  if (!templatesEnabled()) {
-    await logAudit({
-      conversationId,
-      category: "system",
-      label: `Envío bloqueado: la plantilla "${choice.name}" es obligatoria fuera de la ventana de 24 h, pero WHATSAPP_TEMPLATES_ENABLED no está activo.`,
-      payload: { template: choice.name, blocked: true },
-    });
-    return "";
-  }
+  if (await isCustomerSuppressed(target.customerId)) return "";
 
   const text = renderTemplate(choice.name, choice.params);
   await sql`
     insert into agente_comercial.messages (conversation_id, direction, sender, body)
     values (${conversationId}, 'outbound', 'agent', ${text})
   `;
-  try {
-    await sendWhatsAppTemplate(target.customerPhone, choice.name, TEMPLATE_LANGUAGE, choice.params);
+
+  const mode = templateDeliveryMode();
+  if (!target.customerPhone || !isWhatsAppConfigured()) {
     await logAudit({
       conversationId,
       category: "system",
-      label: `Plantilla "${choice.name}" enviada (ventana de 24 h cerrada)`,
-      payload: { template: choice.name },
+      label: `Plantilla "${choice.name}" simulada en el panel (canal de WhatsApp no configurado).`,
+      payload: { template: choice.name, deliveryMode: mode, panelOnly: true },
+    });
+    return text;
+  }
+
+  try {
+    if (mode === "simulate") {
+      if (!(await hasOpenServiceWindow(target.customerId))) {
+        await logAudit({
+          conversationId,
+          category: "system",
+          label: `Plantilla "${choice.name}" simulada en el panel; no se envió a WhatsApp porque el teléfono demo no abrió la ventana de 24 h.`,
+          payload: { template: choice.name, deliveryMode: mode, panelOnly: true },
+        });
+        return text;
+      }
+      await sendWhatsAppInteractiveButtons(
+        target.customerPhone,
+        text,
+        WHATSAPP_TEMPLATES[choice.name].buttons.map((button, index) => ({
+          id: `demo_${choice.name}_${index + 1}`,
+          title: button.text,
+        })),
+      );
+    } else if (mode === "meta") {
+      await sendWhatsAppTemplate(target.customerPhone, choice.name, TEMPLATE_LANGUAGE, choice.params);
+    } else {
+      await logAudit({
+        conversationId,
+        category: "system",
+        label: `Plantilla "${choice.name}" registrada en el panel; entrega por WhatsApp desactivada.`,
+        payload: { template: choice.name, deliveryMode: mode, panelOnly: true },
+      });
+      return text;
+    }
+    await logAudit({
+      conversationId,
+      category: "system",
+      label: mode === "simulate"
+        ? `Plantilla "${choice.name}" enviada en modo demo con botones interactivos.`
+        : `Plantilla "${choice.name}" enviada por Meta (ventana de 24 h cerrada).`,
+      payload: { template: choice.name, deliveryMode: mode },
     });
   } catch (err) {
     await logAudit({

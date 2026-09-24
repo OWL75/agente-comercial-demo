@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { sqlMock, logAuditMock, sendWhatsAppTemplateMock } = vi.hoisted(() => ({
+const { sqlMock, logAuditMock, sendWhatsAppTemplateMock, sendWhatsAppInteractiveButtonsMock } = vi.hoisted(() => ({
   sqlMock: vi.fn(),
   logAuditMock: vi.fn(),
   sendWhatsAppTemplateMock: vi.fn(),
+  sendWhatsAppInteractiveButtonsMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ sql: sqlMock }));
@@ -14,6 +15,7 @@ vi.mock("@/lib/agent/contact-permission", () => ({ isCustomerSuppressed: vi.fn()
 vi.mock("@/lib/channel/whatsapp-client", () => ({
   isWhatsAppConfigured: () => Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
   sendWhatsAppTemplate: sendWhatsAppTemplateMock,
+  sendWhatsAppInteractiveButtons: sendWhatsAppInteractiveButtonsMock,
 }));
 vi.mock("@/lib/db/customer-detail", () => ({ getFrequentProducts: vi.fn() }));
 vi.mock("@/lib/tools/customer", () => ({ saveCustomerInsight: vi.fn() }));
@@ -29,38 +31,69 @@ const target = {
   days_since: 42,
 };
 
-describe("template outreach safety", () => {
+describe("template outreach delivery modes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("WHATSAPP_ACCESS_TOKEN", "test-token");
     vi.stubEnv("WHATSAPP_PHONE_NUMBER_ID", "phone-id");
-    vi.stubEnv("WHATSAPP_TEMPLATES_ENABLED", "false");
+    vi.stubEnv("WHATSAPP_TEMPLATE_MODE", "simulate");
   });
 
   afterEach(() => vi.unstubAllEnvs());
 
-  it("requires a template outside the 24 h window even while the feature switch is off", async () => {
-    sqlMock.mockResolvedValueOnce([target]).mockResolvedValueOnce([{ open: false }]);
-
+  it("uses the template strategy for every demo opening and follow-up", async () => {
     await expect(conversationNeedsTemplate("conversation-1")).resolves.toBe(true);
+    expect(sqlMock).not.toHaveBeenCalled();
   });
 
-  it("fails closed instead of falling back to free text when templates are not enabled", async () => {
-    sqlMock.mockResolvedValueOnce([target]);
+  it("sends the exact copy with interactive buttons when the demo phone opened the service window", async () => {
+    sqlMock
+      .mockResolvedValueOnce([target])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ open: true }]);
 
     await expect(
       sendTemplateMessage("conversation-1", {
         name: "apertura_recompra",
         params: ["Empresa Demo", "42", "Shampoo Professional 1L"],
       }),
-    ).resolves.toBe("");
+    ).resolves.toContain("Hola Empresa Demo");
 
     expect(sendWhatsAppTemplateMock).not.toHaveBeenCalled();
-    expect(sqlMock).toHaveBeenCalledTimes(1);
+    expect(sendWhatsAppInteractiveButtonsMock).toHaveBeenCalledWith(
+      "+50760000000",
+      expect.stringContaining("42 días"),
+      [
+        { id: "demo_apertura_recompra_1", title: "Sí, prepárala" },
+        { id: "demo_apertura_recompra_2", title: "Ahora no" },
+        { id: "demo_apertura_recompra_3", title: "No me interesa" },
+      ],
+    );
     expect(logAuditMock).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId: "conversation-1",
-        payload: { template: "apertura_recompra", blocked: true },
+        payload: { template: "apertura_recompra", deliveryMode: "simulate" },
+      }),
+    );
+  });
+
+  it("keeps the simulated template visible in the panel when the phone window is closed", async () => {
+    sqlMock
+      .mockResolvedValueOnce([target])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ open: false }]);
+
+    await expect(
+      sendTemplateMessage("conversation-1", {
+        name: "apertura_recompra",
+        params: ["Empresa Demo", "42", "Shampoo Professional 1L"],
+      }),
+    ).resolves.toContain("Hola Empresa Demo");
+
+    expect(sendWhatsAppInteractiveButtonsMock).not.toHaveBeenCalled();
+    expect(logAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { template: "apertura_recompra", deliveryMode: "simulate", panelOnly: true },
       }),
     );
   });

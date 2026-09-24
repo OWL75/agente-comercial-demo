@@ -48,6 +48,37 @@ export async function sendWhatsAppTemplate(
   });
 }
 
+export type WhatsAppReplyButton = { id: string; title: string };
+
+/**
+ * Sends session-window reply buttons. The demo uses this to reproduce the
+ * appearance and interaction of a template before the real Meta templates
+ * are approved; production templates still use sendWhatsAppTemplate.
+ */
+export async function sendWhatsAppInteractiveButtons(
+  toPhone: string,
+  body: string,
+  buttons: WhatsAppReplyButton[],
+): Promise<{ messageId: string | null }> {
+  if (buttons.length < 1 || buttons.length > 3) throw new Error("WhatsApp permite entre 1 y 3 botones de respuesta.");
+  return postMessage({
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: toPhone.replace(/\D/g, ""),
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: body },
+      action: {
+        buttons: buttons.map((button) => ({
+          type: "reply",
+          reply: button,
+        })),
+      },
+    },
+  });
+}
+
 async function postMessage(payload: Record<string, unknown>): Promise<{ messageId: string | null }> {
   const accessToken = requireEnv("WHATSAPP_ACCESS_TOKEN");
   const phoneNumberId = requireEnv("WHATSAPP_PHONE_NUMBER_ID");

@@ -28,12 +28,19 @@ type WhatsAppMessage = {
   type: string;
   text?: { body: string };
   button?: { text: string; payload?: string };
+  interactive?: {
+    type: string;
+    button_reply?: { id: string; title: string };
+  };
 };
 
 /** Free text, or the label of a template quick-reply button the customer tapped. */
 function messageText(message: WhatsAppMessage): string | null {
   if (message.type === "text") return message.text?.body || null;
   if (message.type === "button") return message.button?.text || null;
+  if (message.type === "interactive" && message.interactive?.type === "button_reply") {
+    return message.interactive.button_reply?.title || null;
+  }
   return null;
 }
 
@@ -46,6 +53,10 @@ const webhookPayloadSchema = z.object({
           from: z.string().regex(/^\d{5,20}$/), id: z.string().min(1).max(512),
           type: z.string(), text: z.object({ body: z.string().max(4096) }).optional(),
           button: z.object({ text: z.string().max(256), payload: z.string().max(256).optional() }).optional(),
+          interactive: z.object({
+            type: z.string(),
+            button_reply: z.object({ id: z.string().max(256), title: z.string().max(256) }).optional(),
+          }).optional(),
         })).optional(),
       }).optional(),
     })).optional(),
@@ -113,7 +124,7 @@ export async function POST(request: Request) {
       continue;
     }
     const text = messageText(message)!;
-    if (message.type === "button" && isOptOutButtonText(text)) {
+    if ((message.type === "button" || message.type === "interactive") && isOptOutButtonText(text)) {
       await recordOptOutButton(conversationId, text, message.id);
       continue;
     }

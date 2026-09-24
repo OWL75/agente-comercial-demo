@@ -7,7 +7,11 @@ Plantillas que usa el agente comercial para escribir a un cliente fuera de la ve
 - **La plantilla abre la puerta; el agente personaliza.** Meta solo acepta plantillas aprobadas cuando el cliente no escribió en las últimas 24 horas. Cada plantilla lleva 2 o 3 variables que el sistema rellena con datos reales: cliente, días sin comprar, producto habitual y precio vigente.
 - **Los botones reabren la conversación.** Si el cliente toca "Sí, prepárala", "Tengo dudas" u otro botón, Meta abre una nueva ventana de 24 horas. El agente continúa entonces con texto libre, personalizado según toda la conversación.
 - **"No me interesa" es un opt-out.** El sistema lo registra y no vuelve a escribir a ese cliente.
-- **Si la ventana está abierta, no se usa plantilla.** Cuando el cliente escribió en las últimas 24 horas, el agente redacta en texto libre.
+- **En producción, si la ventana está abierta, no se usa plantilla.** Cuando el cliente escribió en las últimas 24 horas, el agente redacta en texto libre. El modo demo descrito abajo fuerza la estrategia de plantillas para poder mostrarla.
+
+### Modo demo
+
+Con `WHATSAPP_TEMPLATE_MODE=simulate`, las aperturas y los cuatro seguimientos usan siempre el texto exacto del catálogo. Si el teléfono demo escribió durante las últimas 24 horas, se entregan como mensajes interactivos con botones de respuesta; así se puede grabar una demostración fiel antes de registrar y pagar las plantillas reales. Si la ventana está cerrada, el mensaje queda visible en el panel, pero no se intenta infringir las reglas del canal.
 
 ## Cuándo usa el sistema cada plantilla
 
@@ -37,9 +41,9 @@ Repite los pasos para las 7 plantillas. Los nombres y textos deben coincidir exa
 
 ## Activar las plantillas en la app
 
-1. Cuando **las 7 plantillas** estén aprobadas, despliega la rama activa del agente en EasyPanel.
-2. Añade la variable `WHATSAPP_TEMPLATES_ENABLED=true` y vuelve a desplegar.
-3. Mientras esa variable no sea `true`, la app bloquea los contactos fuera de la ventana de 24 horas; nunca los degrada a texto libre.
+1. Para la demo, usa `WHATSAPP_TEMPLATE_MODE=simulate`.
+2. Cuando **las 7 plantillas** estén aprobadas, cambia a `WHATSAPP_TEMPLATE_MODE=meta` y vuelve a desplegar.
+3. El modo `meta` usa texto libre dentro de la ventana y la plantilla aprobada cuando la ventana está cerrada.
 
 ## Reglas de Meta que ya cumple el catálogo
 

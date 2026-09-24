@@ -60,8 +60,8 @@ export function FollowUpPanel({
       )}
 
       <p className="text-[11px] leading-relaxed text-slate-500">
-        Si el cliente responde o pide no recibir mensajes, la secuencia se detiene. Cada toque sale como texto
-        libre si el cliente escribió en las últimas 24 h; si no, como plantilla aprobada por Meta.
+        Si el cliente responde o pide no recibir mensajes, la secuencia se detiene. En la demo, cada toque usa
+        el texto y los botones de la plantilla simulada; en producción, se envía la plantilla aprobada por Meta.
       </p>
     </div>
   );
