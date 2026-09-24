@@ -94,3 +94,12 @@ describe("system prompt", () => {
     expect(prompt).not.toMatch(/primera vez que contactas/);
   });
 });
+
+describe("customer-facing language", () => {
+  const prompt = buildSystemPrompt({ customerName: "X", segment: null, reasonText: null, strategyText: null }, { isOpeningMessage: false }, "2026-09-24");
+  it("never shows a 0% discount or internal jargon, and discovers the reference price before offering list price", () => {
+    expect(prompt).toContain('Si no hay descuento, no menciones descuento ni "0%"');
+    expect(prompt).toMatch(/No uses lenguaje interno con el cliente \(recuperar, reactivar/);
+    expect(prompt).toMatch(/Nunca le presentes una oferta al precio de lista a quien acaba de decir que otro le cobra menos/);
+  });
+});

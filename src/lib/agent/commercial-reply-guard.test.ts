@@ -77,3 +77,40 @@ describe("confirmation requests in usted", () => {
     expect(asksForConfirmation("¿Cuántas unidades mueven al mes?")).toBe(false);
   });
 });
+
+describe("real conversation 2026-09-24 16:10 UTC: discovery question wrongly blocked", () => {
+  const REAL_DRAFT = "Entiendo; un mejor precio y entrega al día siguiente pesan mucho en la recompra. ¿A qué precio por unidad y para qué cantidad lo está comprando actualmente?";
+
+  it("lets the agent echo the customer's reasons and ask its discovery question", async () => {
+    const { commercialReplyViolations } = await import("@/lib/agent/commercial-reply-guard");
+    expect(commercialReplyViolations({ reply: REAL_DRAFT, verifiedOffer: null, hasPendingApproval: false, orderCreated: false })).toEqual([]);
+  });
+
+  it.each([
+    "La entrega al día siguiente también se la podemos dar.",
+    "Le confirmo la entrega en 24 horas.",
+    "Precio especial:\n- Entrega: al día siguiente",
+  ])("still blocks a real delivery commitment without a verified offer: %s", async (reply) => {
+    const { commercialReplyViolations } = await import("@/lib/agent/commercial-reply-guard");
+    expect(commercialReplyViolations({ reply, verifiedOffer: null, hasPendingApproval: false, orderCreated: false }))
+      .toContain("commercial_terms_without_verified_offer");
+  });
+});
+
+describe("no '0%' discount in customer messages", () => {
+  it("removes a zero-discount line from the offer list", async () => {
+    const { stripZeroDiscount } = await import("@/lib/agent/commercial-reply-guard");
+    const real = "Le puedo ofrecer:\n\n- *Shampoo Professional 1L*: 50 unidades\n- Precio: *$18.50 por unidad*\n- Total: *$925.00*\n- Descuento: 0%\n- Entrega: *al día siguiente*\n- Pago: crédito a *30 días*\n\n¿Le funciona?";
+    const cleaned = stripZeroDiscount(real);
+    expect(cleaned).not.toMatch(/0%/);
+    expect(cleaned).toContain("- Total: *$925.00*\n- Entrega: *al día siguiente*");
+    expect(stripZeroDiscount("Quedaría en $18.50 por unidad, con 0% de descuento, entrega en 24 horas.")).toBe("Quedaría en $18.50 por unidad, entrega en 24 horas.");
+    expect(stripZeroDiscount("Le puedo rebajar un 5%.")).toBe("Le puedo rebajar un 5%.");
+  });
+
+  it("flags any zero discount left in the text", async () => {
+    const { commercialReplyViolations } = await import("@/lib/agent/commercial-reply-guard");
+    expect(commercialReplyViolations({ reply: "Su descuento es del 0 %.", verifiedOffer: null, hasPendingApproval: false, orderCreated: false }))
+      .toContain("zero_discount_mentioned");
+  });
+});

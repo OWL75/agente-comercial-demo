@@ -395,3 +395,28 @@ describe("due-date reminders", () => {
     ]]);
   });
 });
+
+describe("real conversation 2026-09-24 16:10 UTC: natural replies", () => {
+  const REAL_DRAFT = "Entiendo; un mejor precio y entrega al día siguiente pesan mucho en la recompra. ¿A qué precio por unidad y para qué cantidad lo está comprando actualmente?";
+  const rewrites = async () =>
+    (await database.query<{ label: string }>("select label from agente_comercial.audit_log where label like 'Respuesta con condiciones sin verificar%'")).rows;
+
+  it("sends the discovery question as written instead of forcing a list-price offer", async () => {
+    h.script = [say(REAL_DRAFT)];
+    await runAgentTurn(conversationId, "El precio es mejor y la entrega inmediata al día siguiente");
+    expect((await agentMessages()).at(-1)).toBe(REAL_DRAFT);
+    expect(await rewrites()).toEqual([]);
+    expect(h.script).toHaveLength(0);
+  });
+
+  it("never shows 'Descuento: 0%' to the customer", async () => {
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, discountPct: 0, deliveryHours: 24 })),
+      say("Le puedo ofrecer:\n\n- 50 unidades de Shampoo Professional 1L\n- Precio: *$18.50 por unidad*\n- Total: *$925.00*\n- Descuento: 0%\n- Entrega: *24 horas*\n- Pago: crédito a *30 días*\n\n¿Confirma el pedido en estas condiciones?"),
+    ];
+    await runAgentTurn(conversationId, "¿Cuánto me sale el pedido de siempre con entrega en 24 horas?");
+    const sent = (await agentMessages()).at(-1)!;
+    expect(sent).not.toMatch(/0\s*%|Descuento/);
+    expect(sent).toContain("- Total: *$925.00*\n- Entrega: *24 horas*");
+  });
+});

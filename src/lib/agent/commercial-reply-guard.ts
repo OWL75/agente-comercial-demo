@@ -13,6 +13,37 @@ export function asksForConfirmation(text: string): boolean {
 }
 const FIRM_OFFER = /\b(puedo ofrecer(?:le)?|(?:te|le) ofrezco|(?:te|le) propongo|nuestra oferta|la oferta|queda en|(?:te|le) queda en|precio final|total(?: es|:)|podemos entregar)\b/i;
 const DELIVERY_PROMISE = /\b(entrega(?:mos)?|express|recib(?:es|en)|llega(?:rá)?)\b[^.!?\n]{0,55}\b(24\s*horas|al d[ií]a siguiente)\b|\b(24\s*horas|al d[ií]a siguiente)\b[^.!?\n]{0,55}\b(confirmad[ao]|validad[ao]|disponible|entrega)/i;
+// A delivery phrase is our promise only when we commit to it ("podemos
+// entregarle…", "le llega…") or it is a line of the offer ("Entrega: 24 horas").
+// Echoing the customer ("…y entrega al día siguiente pesan mucho") is not.
+const DELIVERY_COMMITMENT = /\b(podemos|puedo|entregamos|entregarle|enviamos|despachamos|le\s+llega|lo\s+recibe|recibir[aá]|confirm(?:é|e|o|amos|ad[ao])|validad[ao]|disponible)(?![a-zñáéíóú])/i;
+
+function sentencesOf(text: string): string[] {
+  return text.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter(Boolean);
+}
+
+export function promisesDelivery(text: string): boolean {
+  return sentencesOf(text).some((sentence) =>
+    DELIVERY_PROMISE.test(sentence) &&
+    (DELIVERY_COMMITMENT.test(sentence) || FIRM_OFFER.test(sentence) || /^[-*•]/.test(sentence) || /^\*?entrega\*?\s*:/i.test(sentence)));
+}
+
+/**
+ * "Descuento: 0%" is not something a salesperson writes: without a discount
+ * there is just the price. Offer lines stating a zero discount are removed.
+ */
+export function stripZeroDiscount(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !/^\s*[-*•]?\s*\*?descuento\*?\s*:?\s*\*?0\s*%\*?\s*\.?\s*$/i.test(line))
+    .join("\n")
+    .replace(/\s*[,(]?\s*(con|y)?\s*(un\s+)?0\s*%\s*de\s*descuento\s*\)?/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+const ZERO_DISCOUNT = /(^|[^\d.,])0\s*%/;
+
 const INVENTED_GUARANTEE = /\b(nunca volver[aá] a ocurrir|no volver[aá] a pasar|garantizo|garantizamos|sin (?:ningún )?retraso|cero retrasos)\b/i;
 
 function moneyValues(text: string): number[] {
@@ -44,7 +75,8 @@ export function commercialReplyViolations(args: {
   if (hasPendingApproval && CONFIRMATION_ASK.test(reply)) {
     violations.push("confirmation_requested_with_pending_approval");
   }
-  if (hasPendingApproval && DELIVERY_PROMISE.test(reply) && !PENDING_LANGUAGE.test(reply)) {
+  if (ZERO_DISCOUNT.test(reply)) violations.push("zero_discount_mentioned");
+  if (hasPendingApproval && promisesDelivery(reply) && !PENDING_LANGUAGE.test(reply)) {
     violations.push("delivery_promised_with_pending_approval");
   }
 
@@ -55,7 +87,7 @@ export function commercialReplyViolations(args: {
     .filter((sentence) => !(COMPETITOR_REFERENCE.test(sentence) && !FIRM_OFFER.test(sentence)));
   const ownMoney = commercialSentences.flatMap(moneyValues);
   const ownPct = commercialSentences.flatMap(percentValues);
-  const makesOffer = FIRM_OFFER.test(reply) || DELIVERY_PROMISE.test(reply) || ownMoney.length > 0 || ownPct.length > 0;
+  const makesOffer = FIRM_OFFER.test(reply) || promisesDelivery(reply) || ownMoney.length > 0 || ownPct.length > 0;
 
   if (makesOffer && !orderCreated && !verifiedOffer) {
     violations.push("commercial_terms_without_verified_offer");

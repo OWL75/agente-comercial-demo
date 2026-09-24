@@ -22,7 +22,7 @@ import { loadFollowUpContext } from "@/lib/agent/follow-up-data";
 import { askOwner } from "@/lib/agent/owner-notify";
 import { resolveProductRefs } from "@/lib/tools/catalog";
 import { isRepetition } from "@/lib/agent/follow-up-context";
-import { asksForConfirmation } from "@/lib/agent/commercial-reply-guard";
+import { asksForConfirmation, stripZeroDiscount } from "@/lib/agent/commercial-reply-guard";
 import { announceOrderToOwner, pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { formatDateEs } from "@/lib/payments/payment-messages";
 
@@ -39,7 +39,7 @@ const REPETITION_NOTE = (customerMessage: string) =>
 
 const COMMERCIAL_FOLLOW_UP_ISSUE = "incluye precio, descuento, total o entrega sin una oferta verificada";
 
-const UNVERIFIED_TERMS_NOTE = "(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta incluía precio, descuento, total o entrega sin una oferta verificada, así que no se envió. Verifícala ahora con prepare_verified_offer y responde con el resultado en este mismo mensaje. Si el cliente no dio cantidad, usa como propuesta su cantidad habitual del historial (get_purchase_history) y dilo así. Si algo excede tu autonomía, usa request_approval o consult_owner. Si de verdad falta un dato, pregúntalo sin cifras propias. Nunca digas que lo vas a validar más tarde.";
+const UNVERIFIED_TERMS_NOTE = "(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta afirmaba precio, descuento, total o un compromiso de entrega sin una oferta verificada, así que no se envió. Si todavía estás entendiendo la situación del cliente (no sabes su precio de referencia, su cantidad o qué lo haría volver), no presentes una oferta: responde sin cifras propias ni compromisos y haz la pregunta que falta. Si ya tienes lo necesario y el cliente espera una propuesta, verifícala con prepare_verified_offer y responde con el resultado; si no dio cantidad, propón su cantidad habitual del historial. Nunca digas que lo vas a validar más tarde.";
 
 type ConversationContext = {
   customerId: string;
@@ -201,7 +201,7 @@ async function executeAgentLoop(
 
   let response = await untilText(await client.responses.create({ model, instructions, input, tools }));
   if (!response) return "";
-  let reply = toWhatsAppText(response.output_text ?? "");
+  let reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
   if (await isCustomerSuppressed(context.customerId)) return "";
 
   const hasPendingApproval = async () => {
@@ -237,7 +237,7 @@ async function executeAgentLoop(
       }]);
       response = await untilText(await client.responses.create({ model, instructions, input, tools }));
       if (!response) return "";
-      reply = toWhatsAppText(response.output_text ?? "");
+      reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
       issues = review(reply);
       if (issues.length) {
         await logAudit({
@@ -267,7 +267,7 @@ async function executeAgentLoop(
     input = input.concat(response.output, [{ role: "user", content: UNVERIFIED_TERMS_NOTE }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
-    reply = toWhatsAppText(response.output_text ?? "");
+    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
     pendingApproval = await hasPendingApproval();
     violations = violationsOf(reply);
   }
@@ -285,7 +285,7 @@ async function executeAgentLoop(
     input = input.concat(response.output, [{ role: "user", content: REPETITION_NOTE(opts.customerMessage ?? "") }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
-    reply = toWhatsAppText(response.output_text ?? "");
+    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
     pendingApproval = await hasPendingApproval();
     violations = violationsOf(reply);
   }

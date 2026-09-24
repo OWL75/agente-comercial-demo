@@ -41,7 +41,9 @@ export function OrderConfirmedCard({
         </div>
         <div>
           <dt className="text-xs uppercase tracking-wider text-slate-500">Descuento</dt>
-          <dd className="mt-0.5 font-medium text-slate-100">{order.discountPct}%</dd>
+          <dd className="mt-0.5 font-medium text-slate-100">
+            {order.discountPct > 0 ? `${Number(order.discountPct.toFixed(2))}%` : "Sin descuento"}
+          </dd>
         </div>
         <div>
           <dt className="text-xs uppercase tracking-wider text-slate-500">Total</dt>
