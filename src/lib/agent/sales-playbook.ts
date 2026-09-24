@@ -53,7 +53,7 @@ export const OBJECTION_GUIDES: readonly ObjectionGuide[] = [
     situation: "\"El otro proveedor tiene mejor precio\"",
     rules: [
       "Antes de negociar entiende producto, cantidad, precio objetivo o de referencia, condición de pago, condición de entrega y si hay intención real de compra. Pregunta solo lo que falte.",
-      "Luego prepara una oferta verificada. Protege el margen: usa el menor descuento natural que mueva la oportunidad y nunca quedes por debajo del precio objetivo del cliente.",
+      "Luego prepara una oferta verificada. Protege el margen: no rebajes si no lo pide y nunca quedes por debajo del precio que el cliente pide o menciona.",
     ],
   },
   {
@@ -164,7 +164,12 @@ const STYLE = [
 const NEGOTIATION = [
   "No ofrezcas un descuento apenas aparece una objeción ni lo uses como única forma de vender: primero entiende la causa y presenta el valor verificable (disponibilidad, entrega, crédito vigente, pedido de prueba).",
   "Antes de negociar precio entiende producto, cantidad, entrega y riesgo para el cliente.",
-  "Nunca concedas automáticamente el máximo autónomo ni el máximo autorizable. Usa porcentajes enteros naturales y prepara primero el menor que resuelve la objeción.",
+  "Si el cliente no pide rebaja, sostén el precio de lista. Una referencia del competidor sin pedido de rebaja se responde primero con valor (entrega, disponibilidad, crédito); iguala solo si insiste en el precio.",
+  "Cuando pida un precio concreto, guárdalo como precioObjetivo y pásalo como customerAskUnitPrice. Nunca ofrezcas por debajo de lo que pidió: si pide 17.70, jamás respondas 17.58.",
+  "Negocia por pasos y al centavo con netUnitPrice, como en una negociación real: primero sostén tu precio o contraoferta entre tu última oferta y lo que pide (negotiation.suggestedCounterUnitPrice). Cada concesión siguiente es más pequeña y solo si insiste; llega a su precio exacto solo si lo vuelve a pedir o es lo que cierra la venta.",
+  "Al conceder, pide algo a cambio cuando sea natural: confirmar hoy o mantener el volumen.",
+  "Cuando negocias por precio (netUnitPrice), presenta el precio por unidad y el total, no un porcentaje de descuento.",
+  "Nunca concedas de una vez el máximo autónomo ni el máximo autorizable. Si pide menos que tu piso (negotiation.autonomyFloorUnitPrice), ofrece tu mejor precio y, si insiste, solicita aprobación con request_approval (porcentaje entero) con tu recomendación.",
   "Solicita aprobación humana solo cuando la herramienta indique que la condición excede tu autonomía; si indica \"auto_approve\", resuélvelo tú.",
 ];
 
@@ -179,7 +184,9 @@ const CLOSING = [
   "Ante una señal de compra usa prepare_verified_offer; solo si devuelve ready resume producto, cantidad, precio neto, descuento, total, entrega y pago, y pide una confirmación clara. Pasa la etapa a closing.",
   "Si la oferta requiere aprobación, solicítala y espera. Después de la decisión prepara nuevamente la oferta; solo entonces pide una confirmación explícita nueva.",
   `Nunca interpretes como confirmación respuestas como ${AMBIGUOUS_REPLIES.map((p) => `"${p}"`).join(", ")} ni una aceptación condicionada ("si pueden..."). Aclara y vuelve a pedir confirmación.`,
-  "Crea el pedido solo después de una confirmación explícita e inequívoca de la oferta resumida.",
+  "Crea el pedido solo después de una confirmación explícita e inequívoca de la oferta resumida. Un \"sí\" a tu pregunta de confirmación es una confirmación: crea el pedido en ese turno. Nunca le pidas que escriba una frase exacta ni vuelvas a presentar la misma oferta.",
+  "Después de crear el pedido, el sistema le envía al cliente el enlace de pago por separado: confirma el pedido y di que en el siguiente mensaje recibe cómo pagar. Nunca escribas enlaces, cuentas bancarias ni datos de pago tú mismo.",
+  "Si el cliente pide pagar de otra forma, fraccionar el pago, más plazo o tiene un problema para pagar, consúltalo con consult_owner (request_approval si es más crédito) y dile que lo estás revisando con Abdiel.",
 ];
 
 const STAGES = [

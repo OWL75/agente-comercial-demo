@@ -30,13 +30,29 @@ export function explainNonConfirmation(message: string): string | null {
   return null;
 }
 
-export function assertOrderAllowed(ctx: { trigger: TurnTrigger; customerMessage?: string }): void {
+// A plain "sí" is an explicit confirmation when it answers "¿Confirma el pedido?".
+const AFFIRMATIVE = /^\s*(s[ií]+|claro|dale|ok(ay)?|de\s+acuerdo|perfecto|listo|correcto|as[ií]\s+es|est[aá]\s+bien|va|excelente)(?=$|[\s,.;:!¡?¿])/;
+
+/**
+ * Why the last customer message cannot confirm the order, or null. When the
+ * previous agent message asked to confirm a presented offer, a short plain
+ * affirmative counts; hesitation and negation never do.
+ */
+export function explainNonConfirmationInContext(message: string, answeringConfirmationRequest: boolean): string | null {
+  const reason = explainNonConfirmation(message);
+  if (!reason || !answeringConfirmationRequest) return reason;
+  const text = message.toLowerCase().normalize("NFC");
+  if (NEGATED.test(text) || HESITANT.test(text)) return reason;
+  return AFFIRMATIVE.test(text) ? null : reason;
+}
+
+export function assertOrderAllowed(ctx: { trigger: TurnTrigger; customerMessage?: string; answeringConfirmationRequest?: boolean }): void {
   if (ctx.trigger !== "customer_message" || !ctx.customerMessage) {
     throw new Error(
       "Solo se puede crear el pedido en respuesta directa a un mensaje del cliente que confirme la compra. Informa la situación y pide su confirmación explícita.",
     );
   }
-  const reason = explainNonConfirmation(ctx.customerMessage);
+  const reason = explainNonConfirmationInContext(ctx.customerMessage, ctx.answeringConfirmationRequest === true);
   if (reason) {
     throw new Error(
       `No se creó el pedido: ${reason}. Aclara lo que necesita y, cuando corresponda, resume la oferta y pide una confirmación explícita.`,

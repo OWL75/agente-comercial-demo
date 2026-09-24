@@ -54,3 +54,44 @@ export function smallestNaturalDiscount(
   return null;
 }
 
+
+/**
+ * Negotiation by price instead of by whole percentage: a customer who asks
+ * for $17.70 gets $17.70 (or a counter above it), not the $17.58 that the next
+ * whole percent happens to land on. The discount is derived from the net
+ * price and kept with 4 decimals; the total is net unit × quantity, the same
+ * rounding rule as quoteMoney.
+ */
+export function quoteByNetPrice(unitPrice: number, quantity: number, netUnitPrice: number): MoneyBreakdown & { discountPct: number } {
+  const listCents = unitCents(unitPrice);
+  const netCents = unitCents(netUnitPrice);
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error("Cantidad inválida.");
+  if (netCents <= 0 || netCents > listCents) throw new Error("El precio neto debe ser positivo y no mayor al precio de lista.");
+  const totalCents = netCents * quantity;
+  const subtotalCents = listCents * quantity;
+  if (!Number.isSafeInteger(subtotalCents) || !Number.isSafeInteger(totalCents)) throw new Error("Importe demasiado grande.");
+  return {
+    listUnitPrice: listCents / 100,
+    netUnitPrice: netCents / 100,
+    subtotal: subtotalCents / 100,
+    total: totalCents / 100,
+    discountPct: Math.round(((listCents - netCents) / listCents) * 1_000_000) / 10_000,
+  };
+}
+
+/** Lowest unit price the agent may offer on its own. */
+export function autonomyFloorUnitPrice(unitPrice: number, autoMaxPct: number): number {
+  return Math.ceil((unitCents(unitPrice) * (100 - autoMaxPct)) / 100) / 100;
+}
+
+/**
+ * A counter-offer halfway between our last offer and what we could reach
+ * (the ask, or our floor if the ask is below it), rounded up to the cent:
+ * conceding half the gap keeps margin and leaves room for another, smaller
+ * step if the customer insists. Never below the ask or the floor.
+ */
+export function suggestedCounterUnitPrice(lastOffered: number, ask: number, floor: number): number {
+  const lower = Math.max(ask, floor);
+  if (lastOffered <= lower) return Math.round(lower * 100) / 100;
+  return Math.max(lower, Math.ceil(((lastOffered + lower) / 2) * 100 - 1e-9) / 100);
+}

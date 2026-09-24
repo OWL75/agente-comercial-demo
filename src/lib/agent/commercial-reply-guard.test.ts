@@ -67,3 +67,13 @@ describe("deterministic commercial reply guard", () => {
     expect(violations("Te garantizo que nunca volverá a ocurrir un atraso.")).toContain("invented_delivery_guarantee");
   });
 });
+
+describe("confirmation requests in usted", () => {
+  it("recognizes the agent asking to confirm in usted and tú", async () => {
+    const { asksForConfirmation } = await import("@/lib/agent/commercial-reply-guard");
+    expect(asksForConfirmation("¿Confirma el pedido en estas condiciones?")).toBe(true);
+    expect(asksForConfirmation("¿Me confirma si lo ingreso?")).toBe(true);
+    expect(asksForConfirmation("¿Confirmas el pedido?")).toBe(true);
+    expect(asksForConfirmation("¿Cuántas unidades mueven al mes?")).toBe(false);
+  });
+});

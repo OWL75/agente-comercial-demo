@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyMetaSignature } from "@/lib/channel/verify-signature";
-import { findOpenConversationByPhone } from "@/lib/agent/conversation-lifecycle";
+import { findOpenConversationByPhone, findPendingPaymentConversationByPhone } from "@/lib/agent/conversation-lifecycle";
 import { runAgentTurn } from "@/lib/agent/runtime";
 import { logAudit } from "@/lib/agent/audit";
 import { recordOptOutRequest } from "@/lib/agent/template-outreach";
@@ -112,7 +112,8 @@ export async function POST(request: Request) {
   // turn. Fine at demo scale (one customer at a time); a real pilot with
   // concurrent conversations should move this to a queue.
   for (const message of messages) {
-    const conversationId = await findOpenConversationByPhone(message.from);
+    const conversationId = (await findOpenConversationByPhone(message.from)) ??
+      (await findPendingPaymentConversationByPhone(message.from));
     if (!conversationId) {
       await logAudit({
         conversationId: null,

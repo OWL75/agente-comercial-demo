@@ -54,6 +54,31 @@ export async function sendWhatsAppButtons(
   });
 }
 
+/**
+ * Session-window message with one link button (interactive cta_url): the
+ * payment link opens from a "Pagar pedido" button instead of a raw URL.
+ */
+export async function sendWhatsAppLinkButton(
+  toPhone: string,
+  body: string,
+  buttonText: string,
+  url: string,
+  footer?: string,
+): Promise<{ messageId: string | null }> {
+  return postMessage({
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: toPhone.replace(/\D/g, ""),
+    type: "interactive",
+    interactive: {
+      type: "cta_url",
+      body: { text: body },
+      ...(footer ? { footer: { text: footer } } : {}),
+      action: { name: "cta_url", parameters: { display_text: buttonText.slice(0, 20), url } },
+    },
+  });
+}
+
 /** Sends a Meta-approved template; the only kind of message allowed outside the 24 h window. */
 export async function sendWhatsAppTemplate(
   toPhone: string,

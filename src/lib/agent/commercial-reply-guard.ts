@@ -4,8 +4,14 @@ const MONEY = /\$\s*(\d+(?:[.,]\d{1,2})?)/g;
 const PERCENT = /(\d+(?:[.,]\d+)?)\s*%/g;
 const COMPETITOR_REFERENCE = /\b(proveedor|competidor|referencia|pagas|pagan|te\s+(?:lo\s+)?deja|mencionaste|compartiste|actualmente)\b/i;
 const PENDING_LANGUAGE = /\b(pendiente|por confirmar|por validar|requiere (?:una )?aprobaci[oó]n|sujeto a aprobaci[oó]n|solicit[eé] (?:la )?aprobaci[oó]n)\b/i;
-const CONFIRMATION_ASK = /\b(confirmas|me confirmas|procedemos|cerramos|hago el pedido|registro el pedido)\b/i;
-const FIRM_OFFER = /\b(puedo ofrecer|te ofrezco|te propongo|nuestra oferta|la oferta|queda en|te queda en|precio final|total(?: es|:)|podemos entregar)\b/i;
+// Both "tú" and "usted" forms: the agent writes in "usted" ("¿Confirma el pedido?").
+const CONFIRMATION_ASK = /\b(confirmas?|me\s+confirmas?|procedemos|procedo|cerramos|hago\s+el\s+pedido|registro\s+el\s+pedido|ingreso\s+el\s+pedido|lo\s+ingreso)\b/i;
+
+/** The agent's message asks the customer to confirm the offer it presents. */
+export function asksForConfirmation(text: string): boolean {
+  return CONFIRMATION_ASK.test(text);
+}
+const FIRM_OFFER = /\b(puedo ofrecer(?:le)?|(?:te|le) ofrezco|(?:te|le) propongo|nuestra oferta|la oferta|queda en|(?:te|le) queda en|precio final|total(?: es|:)|podemos entregar)\b/i;
 const DELIVERY_PROMISE = /\b(entrega(?:mos)?|express|recib(?:es|en)|llega(?:rá)?)\b[^.!?\n]{0,55}\b(24\s*horas|al d[ií]a siguiente)\b|\b(24\s*horas|al d[ií]a siguiente)\b[^.!?\n]{0,55}\b(confirmad[ao]|validad[ao]|disponible|entrega)/i;
 const INVENTED_GUARANTEE = /\b(nunca volver[aá] a ocurrir|no volver[aá] a pasar|garantizo|garantizamos|sin (?:ningún )?retraso|cero retrasos)\b/i;
 

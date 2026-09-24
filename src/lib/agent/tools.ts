@@ -20,6 +20,7 @@ import { updateOpportunityStage, updateOpportunityStageInput } from "@/lib/tools
 import { prepareVerifiedOffer, prepareVerifiedOfferInput } from "@/lib/tools/offers";
 import { assertOrderAllowed, type TurnTrigger } from "@/lib/agent/order-guard";
 import { askOwner, notifyOwnerOfApproval } from "@/lib/agent/owner-notify";
+import { pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { z } from "zod";
 
 // Identity the model never has to handle: every tool call in a conversation
@@ -33,6 +34,8 @@ export type ToolContext = {
   customerId: string;
   trigger: TurnTrigger;
   customerMessage?: string;
+  /** The agent's previous message asked the customer to confirm a presented offer. */
+  answeringConfirmationRequest?: boolean;
 };
 
 type AnyTool = {
@@ -139,6 +142,17 @@ export const TOOLS: AnyTool[] = [
       return { ...result, ownerNotified };
     },
     label: (input) => `Aprobación solicitada: ${input.type}`,
+  }),
+  tool({
+    name: "resend_payment_link",
+    description: "Reenvía al cliente el enlace de pago del pedido ya creado y pendiente de pago. Úsalo solo si lo pide o no lo encuentra.",
+    schema: z.object({}),
+    execute: async (_input, ctx) => {
+      const pending = await pendingPaymentFor(ctx.conversationId);
+      if (!pending) return { sent: false, note: "No hay un pedido pendiente de pago en esta conversación." };
+      return { sent: !!(await sendPaymentRequest(pending.orderId)) };
+    },
+    label: () => "Enlace de pago reenviado",
   }),
   tool({
     name: "consult_owner",

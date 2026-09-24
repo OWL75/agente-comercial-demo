@@ -20,12 +20,22 @@ import {
 } from "@/lib/agent/follow-up-context";
 import { loadFollowUpContext } from "@/lib/agent/follow-up-data";
 import { askOwner } from "@/lib/agent/owner-notify";
+import { resolveProductRefs } from "@/lib/tools/catalog";
+import { isRepetition } from "@/lib/agent/follow-up-context";
+import { asksForConfirmation } from "@/lib/agent/commercial-reply-guard";
+import { announceOrderToOwner, pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
+import { formatDateEs } from "@/lib/payments/payment-messages";
 
 type TurnOptions = AgentTurnOptions & {
   trigger: TurnTrigger;
   customerMessage?: string;
   followUpContext?: FollowUpContext;
+  /** The agent's message just before this customer message. */
+  previousAgentMessage?: string;
 };
+
+const REPETITION_NOTE = (customerMessage: string) =>
+  `(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta repetía casi textualmente tu mensaje anterior. El cliente ya respondió: «${customerMessage}». Avanza con esa respuesta: si confirmó la oferta presentada, crea el pedido; si pidió algo, respóndelo; nunca le pidas que escriba una frase exacta.`;
 
 const COMMERCIAL_FOLLOW_UP_ISSUE = "incluye precio, descuento, total o entrega sin una oferta verificada";
 
@@ -112,10 +122,12 @@ async function executeAgentLoop(
     customerId: context.customerId,
     trigger: opts.trigger,
     customerMessage: opts.customerMessage,
+    answeringConfirmationRequest: !!opts.previousAgentMessage && asksForConfirmation(opts.previousAgentMessage),
   };
   const instructions = buildSystemPrompt(context, opts);
   let verifiedOffer: VerifiedOfferResult | null = null;
   let orderCreated = false;
+  let createdOrderId: string | null = null;
 
   // Runs tool calls until the model answers with text; null means the
   // customer opted out mid-turn and nothing more may be sent.
@@ -148,11 +160,14 @@ async function executeAgentLoop(
               typeof parsedArgs === "object" && parsedArgs !== null
                 ? { ...parsedArgs, customerId: toolContext.customerId, conversationId: toolContext.conversationId }
                 : parsedArgs;
-            const validated = tool.schema.parse(argsWithContext);
+            const validated = tool.schema.parse(await resolveProductRefs(argsWithContext));
             const result = await tool.execute(validated, toolContext);
             outputPayload = result;
             if (tool.name === "prepare_verified_offer") verifiedOffer = result as VerifiedOfferResult;
-            if (tool.name === "create_sandbox_order") orderCreated = true;
+            if (tool.name === "create_sandbox_order") {
+            orderCreated = true;
+            createdOrderId = (result as { orderId: string }).orderId;
+          }
             await logAudit({
               conversationId,
               category: "tool_call",
@@ -257,6 +272,24 @@ async function executeAgentLoop(
     violations = violationsOf(reply);
   }
 
+  // Repeating the same offer after the customer answered is how a
+  // conversation gets stuck: one rewrite that must move forward.
+  if (opts.trigger === "customer_message" && opts.previousAgentMessage &&
+      isRepetition(reply, opts.previousAgentMessage)) {
+    await logAudit({
+      conversationId,
+      category: "system",
+      label: "Respuesta repetida: el agente la reescribe para avanzar",
+      payload: { draft: reply },
+    });
+    input = input.concat(response.output, [{ role: "user", content: REPETITION_NOTE(opts.customerMessage ?? "") }]);
+    response = await untilText(await client.responses.create({ model, instructions, input, tools }));
+    if (!response) return "";
+    reply = toWhatsAppText(response.output_text ?? "");
+    pendingApproval = await hasPendingApproval();
+    violations = violationsOf(reply);
+  }
+
   let presentedVerifiedOffer = false;
   if (violations.length) {
     await logAudit({
@@ -305,6 +338,21 @@ async function executeAgentLoop(
     }
   }
 
+  // Collecting payment needs no human: the payment link goes out as its own
+  // message right after the confirmation, and the owner is told on Telegram.
+  if (createdOrderId) {
+    try {
+      await sendPaymentRequest(createdOrderId);
+      await announceOrderToOwner(createdOrderId);
+    } catch (err) {
+      await logAudit({
+        conversationId,
+        category: "system",
+        label: `No se pudo enviar el cobro del pedido: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300),
+      });
+    }
+  }
+
   return reply;
 }
 
@@ -314,7 +362,10 @@ export async function runAgentTurn(
   opts: { externalMessageId?: string } = {},
 ): Promise<{ reply: string }> {
   const [conversation] = await sql`select ended_at from agente_comercial.conversations where id = ${conversationId}`;
-  if (!conversation || conversation.ended_at) throw new Error("Conversación no disponible.");
+  // A closed sale stays reachable while its payment is pending, so the
+  // customer can ask about paying without a human stepping in.
+  const pendingPayment = conversation?.ended_at ? await pendingPaymentFor(conversationId) : null;
+  if (!conversation || (conversation.ended_at && !pendingPayment)) throw new Error("Conversación no disponible.");
   const [inserted] = await sql`
     insert into agente_comercial.messages (conversation_id, direction, sender, body, external_message_id)
     values (${conversationId}, 'inbound', 'customer', ${customerMessage}, ${opts.externalMessageId ?? null})
@@ -325,12 +376,21 @@ export async function runAgentTurn(
   // Recovery of an inserted-but-unprocessed message still requires the durable inbox.
   if (!inserted) return { reply: "" };
 
+  const [previousAgent] = await sql`
+    select body from agente_comercial.messages
+    where conversation_id = ${conversationId} and sender = 'agent'
+    order by created_at desc limit 1
+  `;
   const context = await loadConversationContext(conversationId);
   const input = await loadHistoryAsInput(conversationId);
   const reply = await executeAgentLoop(conversationId, context, input, {
     isOpeningMessage: false,
     trigger: "customer_message",
     customerMessage,
+    previousAgentMessage: previousAgent?.body,
+    paymentNote: pendingPayment
+      ? `El pedido #${pendingPayment.orderShort} ya está creado (${pendingPayment.quantity} × ${pendingPayment.productName}, total ${pendingPayment.total}, ${pendingPayment.terms}, vence el ${formatDateEs(pendingPayment.dueDate)}) y el enlace de pago ya se envió; está pendiente de pago. Ayuda al cliente con el pago sin crear otro pedido ni cambiar condiciones. Si pide el enlace otra vez, usa resend_payment_link. Si quiere pagar de otra forma, fraccionar, más plazo o tiene un problema, usa consult_owner y dile que lo revisas con Abdiel.`
+      : undefined,
   });
   return { reply };
 }

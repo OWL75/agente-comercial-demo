@@ -68,3 +68,22 @@ export async function findOpenConversationByPhone(phone: string): Promise<string
   `;
   return row?.id ?? null;
 }
+
+/**
+ * A customer who writes after the sale closed, while its payment is pending
+ * (to ask how to pay, for another method…), reaches that conversation.
+ */
+export async function findPendingPaymentConversationByPhone(phone: string): Promise<string | null> {
+  const digits = normalizePhone(phone);
+  if (!digits) return null;
+  const [row] = await sql<Array<{ id: string }>>`
+    select conv.id
+    from agente_comercial.customers c
+    join agente_comercial.conversations conv on conv.customer_id = c.id
+    join agente_comercial.orders o on o.conversation_id = conv.id and o.status = 'pendiente_pago'
+    where regexp_replace(c.phone, '[^0-9]', '', 'g') = ${digits}
+    order by conv.started_at desc
+    limit 1
+  `;
+  return row?.id ?? null;
+}

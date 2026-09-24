@@ -171,12 +171,12 @@ describe("the real dead end: 'Déjame validar…' never came back", () => {
 });
 
 describe("approvals decided from Telegram", () => {
-  const eightPercentTurn = () => [
+  const eightPercentTurn = (reply = "Lo estoy consultando con mi gerente y te escribo en breve.") => [
     calls(
       tool("prepare_verified_offer", { sku: SKU, quantity: 200, discountPct: 8, deliveryHours: 48 }),
       tool("request_approval", { type: "discount", productSku: SKU, quantity: 200, requestedPct: 8, reason: "Volumen alto", agentRecommendation: "Aprobar 8%" }),
     ),
-    say("Lo estoy consultando con mi gerente y te escribo en breve."),
+    say(reply),
   ];
   const approvedOffer = () => [
     calls(tool("prepare_verified_offer", { sku: SKU, quantity: 200, discountPct: 8, deliveryHours: 48 }), tool("update_opportunity_stage", { stage: "closing" })),
@@ -206,7 +206,7 @@ describe("approvals decided from Telegram", () => {
 
   it("does not message the owner twice when the same request is filed again", async () => {
     await pairOwner();
-    h.script = [...eightPercentTurn(), ...eightPercentTurn()];
+    h.script = [...eightPercentTurn(), ...eightPercentTurn("Perfecto, ya quedó en revisión; le aviso apenas tenga la respuesta.")];
     await runAgentTurn(conversationId, "Te compro 200 si me das 8%.");
     await runAgentTurn(conversationId, "Sí, es en firme el 8%.");
     expect(h.telegram.filter((m) => m.text.startsWith("Necesito tu OK"))).toHaveLength(1);

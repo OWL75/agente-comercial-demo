@@ -19,5 +19,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|api/login|api/webhooks|_next/static|_next/image|favicon.ico).*)"],
+  // /pagar/<token> is a public payment link: the unguessable token is its credential.
+  matcher: ["/((?!login|api/login|api/webhooks|pagar/|_next/static|_next/image|favicon.ico).*)"],
 };

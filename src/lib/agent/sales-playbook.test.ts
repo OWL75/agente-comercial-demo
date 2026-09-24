@@ -53,7 +53,20 @@ describe("sales playbook", () => {
 
   it("no longer tells the agent to counter-offer the maximum approvable discount", () => {
     expect(prompt).not.toMatch(/ofrece como máximo el límite autorizable/);
-    expect(prompt).toMatch(/Nunca concedas automáticamente el máximo/);
+    expect(prompt).toMatch(/Nunca concedas de una vez el máximo/);
+  });
+
+  it("negotiates like a salesperson: holds price, never goes under the ask, concedes in steps", () => {
+    expect(prompt).toMatch(/Si el cliente no pide rebaja, sostén el precio de lista/);
+    expect(prompt).toMatch(/Nunca ofrezcas por debajo de lo que pidió/);
+    expect(prompt).toMatch(/Cada concesión siguiente es más pequeña/);
+    expect(prompt).toContain("netUnitPrice");
+  });
+
+  it("treats a yes to the confirmation question as a confirmation and hands payment to the system", () => {
+    expect(prompt).toMatch(/Un "sí" a tu pregunta de confirmación es una confirmación/);
+    expect(prompt).toMatch(/Nunca le pidas que escriba una frase exacta/);
+    expect(prompt).toMatch(/el sistema le envía al cliente el enlace de pago/);
   });
 
   it("keeps WhatsApp formatting free of double asterisks and Markdown headings", () => {

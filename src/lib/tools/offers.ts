@@ -3,7 +3,13 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { getActivePolicy } from "@/lib/db/policies";
 import { evaluateDelivery, evaluateDiscount } from "@/lib/policy/evaluate";
-import { quoteMoney, smallestNaturalDiscount } from "@/lib/policy/verified-offer";
+import {
+  autonomyFloorUnitPrice,
+  quoteByNetPrice,
+  quoteMoney,
+  smallestNaturalDiscount,
+  suggestedCounterUnitPrice,
+} from "@/lib/policy/verified-offer";
 import { uuidLike } from "@/lib/zod-helpers";
 
 export const prepareVerifiedOfferInput = z.object({
@@ -11,9 +17,17 @@ export const prepareVerifiedOfferInput = z.object({
   customerId: uuidLike,
   sku: z.string().trim().min(1),
   quantity: z.number().int().positive(),
-  discountPct: z.number().int().min(0).max(100)
-    .describe("Porcentaje comercial natural y entero (por ejemplo 2, 3, 4 o 5)."),
+  discountPct: z.number().int().min(0).max(100).optional()
+    .describe("Porcentaje entero (0 = precio de lista). Úsalo para el precio de lista o para un descuento que requiere aprobación."),
+  netUnitPrice: z.number().positive().optional()
+    .describe("Precio neto por unidad con máximo dos decimales, para negociar al centavo (por ejemplo 17.73). Usa discountPct o netUnitPrice, no ambos."),
+  customerAskUnitPrice: z.number().positive().optional()
+    .describe("Último precio por unidad que pidió o mencionó el cliente, si lo hizo. La oferta nunca queda por debajo."),
   deliveryHours: z.number().int().positive(),
+}).superRefine((input, ctx) => {
+  if ((input.discountPct == null) === (input.netUnitPrice == null)) {
+    ctx.addIssue({ code: "custom", message: "Indica discountPct o netUnitPrice (exactamente uno)." });
+  }
 });
 export type PrepareVerifiedOfferInput = z.infer<typeof prepareVerifiedOfferInput>;
 
@@ -44,6 +58,14 @@ export type VerifiedOfferResult = {
   approvalsNeeded: Array<"discount" | "credit" | "delivery">;
   reason?: string;
   recommendedDiscountPct?: number;
+  recommendedNetUnitPrice?: number;
+  /** Facts for the next move in a price negotiation. */
+  negotiation?: {
+    customerAskUnitPrice: number | null;
+    lastOfferedUnitPrice: number | null;
+    autonomyFloorUnitPrice: number;
+    suggestedCounterUnitPrice: number | null;
+  };
   roundingRule: "round_net_unit_to_cent_then_multiply";
 };
 
@@ -90,22 +112,42 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
   if (!product) throw new Error(`Producto con SKU "${input.sku}" no encontrado.`);
 
   const unitPrice = Number(product.unit_price);
-  const money = quoteMoney(unitPrice, input.quantity, input.discountPct);
+  const byPrice = input.netUnitPrice != null;
+  const priced = byPrice
+    ? quoteByNetPrice(unitPrice, input.quantity, input.netUnitPrice!)
+    : { ...quoteMoney(unitPrice, input.quantity, input.discountPct!), discountPct: input.discountPct! };
+  const { discountPct, ...money } = priced;
   const [insight] = await sql<Array<{ precio_objetivo: string | null }>>`
     select precio_objetivo from agente_comercial.customer_insights
     where conversation_id = ${input.conversationId}
   `;
-  const target = insight?.precio_objetivo == null ? null : Number(insight.precio_objetivo);
-  const recommended = target == null
+  // The latest ask wins: a customer who moved from 17.75 to 17.70 asked for 17.70.
+  const target = input.customerAskUnitPrice ?? (insight?.precio_objetivo == null ? null : Number(insight.precio_objetivo));
+  const recommended = target == null || byPrice
     ? null
     : smallestNaturalDiscount(unitPrice, target, policy.config.discount.autoMaxPct);
+  const floor = autonomyFloorUnitPrice(unitPrice, policy.config.discount.autoMaxPct);
+  const [lastPresented] = await sql<Array<{ net: string | null }>>`
+    select payload->'offer'->>'netUnitPrice' as net from agente_comercial.audit_log
+    where conversation_id = ${input.conversationId} and category = 'policy_check'
+      and label = 'Oferta verificada presentada para confirmación'
+    order by created_at desc limit 1
+  `;
+  const lastOffered = lastPresented?.net == null ? null : Number(lastPresented.net);
+  const negotiation: NonNullable<VerifiedOfferResult["negotiation"]> = {
+    customerAskUnitPrice: target,
+    lastOfferedUnitPrice: lastOffered,
+    autonomyFloorUnitPrice: floor,
+    suggestedCounterUnitPrice: target == null ? null : suggestedCounterUnitPrice(lastOffered ?? unitPrice, target, floor),
+  };
 
   const base: Omit<VerifiedOfferResult, "status" | "approvalsNeeded"> = {
     sku: product.sku,
     productName: product.name,
     quantity: input.quantity,
     ...money,
-    discountPct: input.discountPct,
+    discountPct,
+    negotiation,
     stockAvailable: Number(product.stock),
     creditAvailable: Number(conversation.credit_available),
     creditTerms: conversation.payment_terms,
@@ -118,7 +160,22 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
   if (Number(product.stock) < input.quantity) {
     return { ...base, status: "unavailable", approvalsNeeded: [], reason: "stock_insufficient" };
   }
-  if (recommended !== null && input.discountPct > recommended) {
+  // Never below what the customer asked: every cent under the ask is margin given away.
+  if (target != null && money.netUnitPrice < target - 0.005) {
+    return {
+      ...base,
+      status: "unavailable",
+      approvalsNeeded: [],
+      reason: "below_customer_ask",
+      recommendedNetUnitPrice: Math.max(target, floor),
+    };
+  }
+  // Price-based concessions stay inside the agent's autonomy; beyond it the
+  // owner decides a whole-percent discount through request_approval.
+  if (byPrice && discountPct > policy.config.discount.autoMaxPct + 1e-9) {
+    return { ...base, status: "unavailable", approvalsNeeded: [], reason: "price_beyond_autonomy", recommendedNetUnitPrice: floor };
+  }
+  if (recommended !== null && discountPct > recommended) {
     return {
       ...base,
       status: "unavailable",
@@ -128,7 +185,7 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
     };
   }
 
-  const discountDecision = evaluateDiscount(input.discountPct, policy.config.discount);
+  const discountDecision = evaluateDiscount(discountPct, policy.config.discount);
   if (discountDecision.decision === "denied") {
     return { ...base, status: "unavailable", approvalsNeeded: [], reason: "discount_out_of_policy" };
   }
@@ -147,7 +204,7 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
   if (
     discountDecision.decision === "requires_approval" &&
     !(["approved", "modified"].includes(discountApproval?.status ?? "") &&
-      discountApproval?.decided_value?.pct === input.discountPct)
+      discountApproval?.decided_value?.pct === discountPct)
   ) approvalsNeeded.push("discount");
 
   const deliveryDecision = evaluateDelivery(

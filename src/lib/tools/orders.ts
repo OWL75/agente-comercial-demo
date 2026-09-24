@@ -4,13 +4,15 @@ import { sql } from "@/lib/db";
 import type { CommercialPolicyConfig } from "@/lib/db/policies";
 import { aggregateItems, moneyTotals, validateOrderConditions, type ScopedApproval } from "@/lib/policy/order-validation";
 import { uuidLike } from "@/lib/zod-helpers";
-import { smallestNaturalDiscount } from "@/lib/policy/verified-offer";
+import { quoteByNetPrice, smallestNaturalDiscount } from "@/lib/policy/verified-offer";
 
 export const createSandboxOrderInput = z.object({
   conversationId: uuidLike,
   customerId: uuidLike,
   items: z.array(z.object({ sku: z.string().trim().min(1), quantity: z.number().int().positive() })).min(1).max(100),
   discountPct: z.number().min(0).max(100).default(0),
+  netUnitPrice: z.number().positive().optional()
+    .describe("Precio neto por unidad de la oferta presentada, si se negoció por precio. Debe coincidir con la oferta."),
   creditTerms: z.string().min(1).describe("Condición exacta devuelta por get_credit_status; no inventar ni cambiar el plazo."),
   deliveryHours: z.number().int().positive().describe("Horas exactas consultadas en get_delivery_options o aprobadas por un humano."),
 });
@@ -58,6 +60,7 @@ export async function createSandboxOrder(rawInput: CreateSandboxOrderInput) {
     });
     const [presented] = await tx<Array<{ payload: { offer?: {
       status?: string; sku?: string; quantity?: number; discountPct?: number; deliveryHours?: number;
+      netUnitPrice?: number; total?: number;
     } } }>>`
       select payload from agente_comercial.audit_log
       where conversation_id = ${input.conversationId}
@@ -66,17 +69,30 @@ export async function createSandboxOrder(rawInput: CreateSandboxOrderInput) {
       order by created_at desc, id desc limit 1
     `;
     const offer = presented?.payload?.offer;
+    // A price-negotiated offer is matched by its net unit price; the model may
+    // not reproduce its derived 4-decimal percentage exactly.
+    const priceMatches = input.netUnitPrice != null
+      ? Math.abs((offer?.netUnitPrice ?? -1) - input.netUnitPrice) < 0.005
+      : offer?.discountPct === input.discountPct;
     if (!offer || offer.status !== "ready" || lines.length !== 1 ||
         offer.sku !== lines[0].sku || offer.quantity !== lines[0].quantity ||
-        offer.discountPct !== input.discountPct || offer.deliveryHours !== input.deliveryHours) {
+        !priceMatches || offer.deliveryHours !== input.deliveryHours) {
       throw new Error("No existe una oferta verificada y presentada que coincida con este pedido. Prepara la oferta, preséntala y pide confirmación antes de crear el pedido.");
     }
-    const { subtotal, total } = moneyTotals(lines, input.discountPct);
+    // The presented offer is the source of truth for the discount it implies.
+    if (input.netUnitPrice != null) input.discountPct = offer.discountPct ?? 0;
+    const byPrice = !Number.isInteger(input.discountPct);
+    const { subtotal, total } = byPrice
+      ? quoteByNetPrice(lines[0].unitPrice, lines[0].quantity, offer.netUnitPrice!)
+      : moneyTotals(lines, input.discountPct);
+    if (byPrice && Math.abs(total - (offer.total ?? -1)) >= 0.005) {
+      throw new Error("El total no coincide con la oferta presentada; vuelve a verificarla.");
+    }
     const [insight] = await tx<Array<{ precio_objetivo: string | null }>>`
       select precio_objetivo from agente_comercial.customer_insights
       where conversation_id = ${input.conversationId}
     `;
-    if (insight?.precio_objetivo != null && lines.length === 1) {
+    if (!byPrice && insight?.precio_objetivo != null && lines.length === 1) {
       const recommended = smallestNaturalDiscount(
         lines[0].unitPrice,
         Number(insight.precio_objetivo),

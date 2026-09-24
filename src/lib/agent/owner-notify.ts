@@ -165,3 +165,20 @@ export async function askOwnerForValue(conversationId: string, approvalId: strin
   const { messageId } = await sendTelegramMessage(chatId, prompt, { force_reply: true, input_field_placeholder: "Ej.: 7" });
   await recordLink(messageId, { purpose: "approval_value", conversationId, approvalId }, "Se pidió al dueño un valor alternativo.");
 }
+
+/** Informational message to the owner (no reply expected). Best effort, like every owner message. */
+export async function notifyOwner(conversationId: string | null, text: string): Promise<boolean> {
+  const chatId = isTelegramConfigured() ? await ownerChatId() : null;
+  if (!chatId) return false;
+  try {
+    await sendTelegramMessage(chatId, text);
+    return true;
+  } catch (err) {
+    await logAudit({
+      conversationId,
+      category: "system",
+      label: `No se pudo avisar al dueño por Telegram: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300),
+    });
+    return false;
+  }
+}

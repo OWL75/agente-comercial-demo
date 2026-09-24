@@ -278,3 +278,15 @@ export function followUpTemplateCandidates(args: TemplateArgs): TemplateName[] {
 export function chooseFollowUpTemplate(args: TemplateArgs): TemplateName | null {
   return followUpTemplateCandidates(args)[0] ?? null;
 }
+
+function figures(text: string): string {
+  return [...text.matchAll(/\d+(?:[.,]\d+)?/g)].map((m) => m[0].replace(",", ".")).sort().join("|");
+}
+
+/**
+ * The reply says the same thing again: same wording and the same figures. A
+ * counter-offer with new numbers reads alike but moves the negotiation.
+ */
+export function isRepetition(reply: string, previous: string): boolean {
+  return similarity(reply, previous) >= 0.6 && figures(reply) === figures(previous);
+}

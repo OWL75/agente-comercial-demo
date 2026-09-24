@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertOrderAllowed, explainNonConfirmation } from "@/lib/agent/order-guard";
+import { assertOrderAllowed, explainNonConfirmation, explainNonConfirmationInContext } from "@/lib/agent/order-guard";
 
 describe("order guard", () => {
   it.each([
@@ -40,4 +40,23 @@ describe("order guard", () => {
   it("blocks a customer turn without a message", () => {
     expect(() => assertOrderAllowed({ trigger: "customer_message" })).toThrow("mensaje del cliente");
   });
+});
+
+describe("confirmation in context", () => {
+  it.each(["Si", "Sí", "sí, perfecto", "Si está bien", "Si confirmo el pedido", "Dale", "De acuerdo"])(
+    "accepts %s when it answers '¿Confirma el pedido?'",
+    (message) => {
+      expect(explainNonConfirmationInContext(message, true)).toBeNull();
+      expect(() => assertOrderAllowed({ trigger: "customer_message", customerMessage: message, answeringConfirmationRequest: true })).not.toThrow();
+    },
+  );
+
+  it.each(["Si", "Dale", "Mucho mejor"])("does not accept %s when no confirmation was asked", (message) => {
+    expect(explainNonConfirmationInContext(message, false)).not.toBeNull();
+  });
+
+  it.each(["Mucho mejor", "Sí, déjame pensarlo", "Si, pero todavía no", "Suena bien"])(
+    "never accepts %s, even answering a confirmation request",
+    (message) => expect(explainNonConfirmationInContext(message, true)).not.toBeNull(),
+  );
 });
