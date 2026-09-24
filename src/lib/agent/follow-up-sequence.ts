@@ -14,7 +14,7 @@ export const FOLLOW_UP_STEPS: readonly FollowUpStep[] = [
     productionDelay: "+4 h hábiles sin respuesta",
     requiresTemplate: false,
     instruction:
-      "Recordatorio breve y amable (1–2 líneas). Retoma exactamente lo último que hablaron y termina con UNA pregunta muy fácil de responder (sí/no o elegir una opción), por ejemplo si le preparas la cantidad habitual. No repitas tu mensaje anterior ni presiones.",
+      "Retoma el hilo: vuelve sobre lo que quedó abierto, de forma más fácil de responder. Sin oferta nueva ni presión.",
   },
   {
     step: 2,
@@ -22,7 +22,7 @@ export const FOLLOW_UP_STEPS: readonly FollowUpStep[] = [
     productionDelay: "+2 días (plantilla aprobada)",
     requiresTemplate: true,
     instruction:
-      "Aporta algo nuevo y concreto: consulta con las herramientas el precio vigente y la disponibilidad del producto de interés y menciona el dato real, junto con la condición de entrega si la tienes. Cierra con una propuesta concreta y fácil de aceptar. No inventes ningún dato.",
+      "Aporta algo nuevo, verificado con las herramientas, que responda a la preocupación concreta del cliente, y cierra con una propuesta pequeña y fácil de aceptar. No inventes ningún dato.",
   },
   {
     step: 3,
@@ -30,7 +30,7 @@ export const FOLLOW_UP_STEPS: readonly FollowUpStep[] = [
     productionDelay: "+5 días (plantilla aprobada)",
     requiresTemplate: true,
     instruction:
-      "Cambia de ángulo: aborda con empatía la objeción más probable según lo conversado (precio, competencia, momento, inventario propio) y ofrece una alternativa que sí esté permitida por las herramientas, o pregunta si hay otra persona que decide las compras con quien convenga hablar. Sin tono de reclamo.",
+      "Cambia de ángulo respecto a tus mensajes anteriores y ofrece una alternativa que sí esté permitida por las herramientas. Sin tono de reclamo.",
   },
   {
     step: 4,
@@ -38,7 +38,7 @@ export const FOLLOW_UP_STEPS: readonly FollowUpStep[] = [
     productionDelay: "+10 días (plantilla aprobada)",
     requiresTemplate: true,
     instruction:
-      "Mensaje de despedida respetuoso: di claramente que no volverás a escribir sobre este tema para no molestar, deja la puerta abierta para que responda cuando lo necesite y agradece. Sin culpa ni urgencia artificial.",
+      "Despedida respetuosa: di que no volverás a escribir sobre este tema, deja la puerta abierta y agradece. Sin culpa ni urgencia artificial.",
   },
 ];
 

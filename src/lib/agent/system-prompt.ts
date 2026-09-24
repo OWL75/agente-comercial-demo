@@ -1,7 +1,12 @@
 import { FOLLOW_UP_TOTAL, type FollowUpStep } from "@/lib/agent/follow-up-sequence";
 import { renderSalesPlaybook } from "@/lib/agent/sales-playbook";
 
-export type AgentTurnOptions = { isOpeningMessage: boolean; followUp?: FollowUpStep };
+export type AgentTurnOptions = {
+  isOpeningMessage: boolean;
+  followUp?: FollowUpStep;
+  /** Conversation-specific brief (see follow-up-context.ts), only on follow-up turns. */
+  followUpBrief?: string;
+};
 
 export type PromptContext = {
   customerName: string;
@@ -60,7 +65,7 @@ ${
     : ""
 }${
   opts.followUp
-    ? `\nEl cliente no ha respondido tu último mensaje. Escribe el seguimiento ${opts.followUp.step} de ${FOLLOW_UP_TOTAL} ("${opts.followUp.title}"): ${opts.followUp.instruction} Nunca menciones que es un mensaje automático ni cuántos seguimientos van, y no copies frases de tus mensajes anteriores.`
+    ? `\nEl cliente no ha respondido tu último mensaje. Escribe el seguimiento ${opts.followUp.step} de ${FOLLOW_UP_TOTAL} ("${opts.followUp.title}"): ${opts.followUp.instruction} Nunca menciones que es un mensaje automático ni cuántos seguimientos van.${opts.followUpBrief ? `\n\n${opts.followUpBrief}` : ""}`
     : ""
 }`;
 }

@@ -41,9 +41,19 @@ describe("template outreach delivery modes", () => {
 
   afterEach(() => vi.unstubAllEnvs());
 
-  it("uses the template strategy for every demo opening and follow-up", async () => {
+  it("uses the approved copy for every demo opening", async () => {
     await expect(conversationNeedsTemplate("conversation-1")).resolves.toBe(true);
     expect(sqlMock).not.toHaveBeenCalled();
+  });
+
+  it("lets the agent write a demo follow-up while the customer's 24 h window is open", async () => {
+    sqlMock.mockResolvedValueOnce([{ recent: true }]);
+    await expect(conversationNeedsTemplate("conversation-1", "follow_up")).resolves.toBe(false);
+  });
+
+  it("falls back to an approved template for a demo follow-up once the window closed", async () => {
+    sqlMock.mockResolvedValueOnce([{ recent: false }]);
+    await expect(conversationNeedsTemplate("conversation-1", "follow_up")).resolves.toBe(true);
   });
 
   it("sends the exact copy as text without buttons in demo mode", async () => {

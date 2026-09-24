@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Deterministic objection-handling scenarios. A scripted stand-in for the
@@ -523,5 +523,117 @@ describe("regression: exact Empresa Demo price and delivery conversation", () =>
     expect((await database.query(
       "select subtotal, discount_pct, total, delivery_option from agente_comercial.orders",
     )).rows).toEqual([{ subtotal: "925", discount_pct: "4", total: "888", delivery_option: "24 horas" }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Contextual follow-ups — replay of the real Distribuidora Belleza del Istmo
+// conversation (2026-09-24), whose follow-up 1 was a fixed "¿están cubiertos?"
+// template sent one minute after the customer explained price + late delivery.
+// ---------------------------------------------------------------------------
+
+describe("contextual follow-ups (real Belleza del Istmo conversation)", () => {
+  const realOpening = [say("Hola Distribuidora Belleza del Istmo, te escribo de Nova Distribution por Shampoo Professional 1L. Como solemos coordinar su reposición, quería saber cómo van de inventario esta semana. ¿Cambió algo en la demanda o necesitan reponer pronto?")];
+  const realT1 = [
+    calls(save({ competidorMencionado: "otro proveedor (sin nombre)", objecion: "necesidad: compran con otro proveedor" }), stage("objection_handling")),
+    say("Entiendo, gracias por comentármelo. Para no insistir de más, ¿qué fue lo que más influyó en el cambio: precio, disponibilidad, entregas o atención?"),
+  ];
+  const realT2 = [
+    calls(save({
+      motivoInactividad: "Cambió al proveedor por un precio mejor y porque la última entrega de Nova Distribution llegó tarde.",
+      objecion: "precio: el proveedor actual ofrece un precio mejor; servicio: la última entrega de Nova Distribution llegó tarde.",
+      productoInteres: "Shampoo Professional 1L",
+    })),
+    say("Entiendo: el precio y la entrega fueron determinantes, y lamento que hayan tenido esa experiencia. No quiero hacerte una promesa sin verificarla; ¿qué tendría que demostrar Nova para que consideraran compararnos nuevamente en su próxima reposición?"),
+  ];
+  const SENT_FOLLOW_UP = "Hola Distribuidora Belleza del Istmo, retomo mi mensaje sobre Shampoo Professional 1L. ¿Están cubiertos por ahora o prevén reponer pronto?";
+  const GOOD_FOLLOW_UP = "Me quedé pensando en lo de la entrega que llegó tarde. Si te sirve, reviso qué podemos cumplir hoy con el Shampoo Professional 1L para su próxima reposición. ¿Lo reviso?";
+
+  const replay = () => play(MAIN_OBJECTION_SCENARIO, [realOpening, realT1, realT2], MAIN_OBJECTION_SCENARIO.messages.slice(0, 2));
+  const agentMessages = async () =>
+    (await database.query<{ body: string }>(
+      "select body from agente_comercial.messages where conversation_id=$1 and sender='agent' order by created_at", [conversationId],
+    )).rows.map((r) => r.body);
+  const labels = async () =>
+    (await database.query<{ label: string }>("select label from agente_comercial.audit_log order by created_at")).rows.map((r) => r.label);
+
+  beforeEach(() => { vi.stubEnv("WHATSAPP_TEMPLATE_MODE", "simulate"); });
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it("writes the follow-up from the conversation instead of the fixed template, and rewrites a generic draft", async () => {
+    await replay();
+    h.instructions = [];
+    h.script = [say(SENT_FOLLOW_UP), say(GOOD_FOLLOW_UP)];
+    await simulateCustomerSilence(conversationId);
+
+    expect((await agentMessages()).at(-1)).toBe(GOOD_FOLLOW_UP);
+    const brief = h.instructions[0];
+    expect(brief).toContain("«Cambiamos porque nos mejoraron el precio y además la última entrega de ustedes llegó tarde.»");
+    expect(brief).toContain("¿qué tendría que demostrar Nova");
+    expect(brief).toContain("no lo vuelvas a preguntar");
+    const log = await labels();
+    expect(log.some((l) => l.startsWith("Borrador de seguimiento reescrito"))).toBe(true);
+    expect(log.some((l) => l.includes("plantilla"))).toBe(false);
+    expect((await getFollowUpState(conversationId)).sentCount).toBe(1);
+  });
+
+  it("sends nothing when the rewrite still ignores the conversation", async () => {
+    await replay();
+    const before = await agentMessages();
+    h.script = [say(SENT_FOLLOW_UP), say("Hola, te escribo de Nova Distribution. ¿Cómo van de inventario?")];
+    await simulateCustomerSilence(conversationId);
+
+    expect(await agentMessages()).toEqual(before);
+    expect((await labels()).some((l) => l.startsWith("Seguimiento no enviado"))).toBe(true);
+    expect((await getFollowUpState(conversationId)).sentCount).toBe(0);
+  });
+
+  it("rewrites a follow-up with unverified prices instead of sending the generic 'let me validate' text", async () => {
+    await replay();
+    h.script = [say("Te puedo ofrecer el Shampoo Professional 1L a $17.50 por unidad. ¿Te interesa?"), say(GOOD_FOLLOW_UP)];
+    await simulateCustomerSilence(conversationId);
+
+    const sent = (await agentMessages()).at(-1);
+    expect(sent).toBe(GOOD_FOLLOW_UP);
+    expect(sent).not.toMatch(/Déjame validar/);
+  });
+
+  it("uses a template that fits the conversation once the 24 h window closed", async () => {
+    await replay();
+    const { rows: [purchase] } = await database.query<{ id: string }>(
+      "insert into agente_comercial.purchases (customer_id, purchase_date, amount) values ($1, current_date - 42, 925) returning id", [customerId]);
+    await database.query(
+      "insert into agente_comercial.purchase_items (purchase_id, product_id, quantity, unit_price) select $1, id, 50, 18.50 from agente_comercial.products where sku='CAP-001'",
+      [purchase.id]);
+    await database.query("update agente_comercial.messages set created_at = created_at - interval '2 days' where conversation_id=$1", [conversationId]);
+
+    await simulateCustomerSilence(conversationId);
+
+    const sent = (await agentMessages()).at(-1)!;
+    expect(sent).toContain("hoy tenemos disponibilidad a $18.50 por unidad");
+    expect(sent).not.toMatch(/Están cubiertos/);
+  });
+
+  it("falls back to the next fitting template when the price template lacks data", async () => {
+    await replay();
+    await database.query("update agente_comercial.messages set created_at = created_at - interval '2 days' where conversation_id=$1", [conversationId]);
+
+    await simulateCustomerSilence(conversationId);
+
+    expect((await agentMessages()).at(-1)).toMatch(/puedo revisar precio, volumen o entrega contigo/);
+  });
+
+  it("skips the touch rather than repeat a template or send one that contradicts the conversation", async () => {
+    await replay();
+    await database.query("update agente_comercial.messages set created_at = created_at - interval '2 days' where conversation_id=$1", [conversationId]);
+    await database.query(
+      "insert into agente_comercial.audit_log (conversation_id, category, label, payload) values ($1, 'system', 'previo', $2)",
+      [conversationId, JSON.stringify({ template: "seguimiento_angulo" })]);
+    const before = await agentMessages();
+
+    await simulateCustomerSilence(conversationId);
+
+    expect(await agentMessages()).toEqual(before);
+    expect((await labels()).some((l) => l.includes("omitido: ninguna plantilla aprobada encaja"))).toBe(true);
   });
 });

@@ -68,9 +68,20 @@ export async function simulateCustomerSilence(conversationId: string): Promise<v
   if (!state.canSimulate || !step) return;
 
   try {
-    const viaTemplate = await conversationNeedsTemplate(conversationId);
-    const reply = viaTemplate
-      ? await sendTemplateMessage(conversationId, await buildFollowUpTemplate(conversationId, step.step))
+    const viaTemplate = await conversationNeedsTemplate(conversationId, "follow_up");
+    const template = viaTemplate ? await buildFollowUpTemplate(conversationId, step.step) : null;
+    if (viaTemplate && !template) {
+      // Sending an approved copy that contradicts the conversation is worse than skipping this touch.
+      await logAudit({
+        conversationId,
+        category: "system",
+        label: `Seguimiento ${step.step} de ${FOLLOW_UP_TOTAL} omitido: ninguna plantilla aprobada encaja con lo conversado y la ventana de 24 h está cerrada.`,
+        payload: { followUpStep: step.step, simulated: true, viaTemplate, skipped: true },
+      });
+      return;
+    }
+    const reply = template
+      ? await sendTemplateMessage(conversationId, template)
       : (await sendFollowUp(conversationId, step)).reply;
     if (!reply) return;
     await logAudit({

@@ -12,8 +12,21 @@ import { buildSystemPrompt, type AgentTurnOptions } from "@/lib/agent/system-pro
 import type { TurnTrigger } from "@/lib/agent/order-guard";
 import type { VerifiedOfferResult } from "@/lib/tools/offers";
 import { commercialReplyViolations, guardedFallback, presentsFinalVerifiedOffer } from "@/lib/agent/commercial-reply-guard";
+import {
+  FOLLOW_UP_ISSUE_EXPLANATIONS,
+  followUpReplyIssues,
+  renderFollowUpBrief,
+  type FollowUpContext,
+} from "@/lib/agent/follow-up-context";
+import { loadFollowUpContext } from "@/lib/agent/follow-up-data";
 
-type TurnOptions = AgentTurnOptions & { trigger: TurnTrigger; customerMessage?: string };
+type TurnOptions = AgentTurnOptions & {
+  trigger: TurnTrigger;
+  customerMessage?: string;
+  followUpContext?: FollowUpContext;
+};
+
+const COMMERCIAL_FOLLOW_UP_ISSUE = "incluye precio, descuento, total o entrega sin una oferta verificada";
 
 type ConversationContext = {
   customerId: string;
@@ -101,68 +114,75 @@ async function executeAgentLoop(
   let verifiedOffer: VerifiedOfferResult | null = null;
   let orderCreated = false;
 
-  let response = await client.responses.create({ model, instructions, input, tools });
-
-  for (let iteration = 0; ; iteration++) {
-    const functionCalls = response.output.filter(isFunctionCall);
-    if (functionCalls.length === 0) break;
-    if (iteration >= MAX_TOOL_ITERATIONS) {
-      throw new Error("El agente excedió el límite de pasos de herramientas en un turno.");
-    }
-
-    input = input.concat(response.output);
-
-    for (const call of functionCalls) {
-      if (await isCustomerSuppressed(context.customerId)) return "";
-      const tool = getTool(call.name);
-      let outputPayload: unknown;
-
-      if (!tool) {
-        outputPayload = { error: `Herramienta desconocida: ${call.name}` };
-      } else {
-        try {
-          const parsedArgs: unknown = JSON.parse(call.arguments || "{}");
-          // Belt-and-suspenders: even though the model never sees these
-          // fields in the tool schema (see getOpenAiToolDefinitions), force
-          // them here too in case a tool's own schema still requires them.
-          const argsWithContext =
-            typeof parsedArgs === "object" && parsedArgs !== null
-              ? { ...parsedArgs, customerId: toolContext.customerId, conversationId: toolContext.conversationId }
-              : parsedArgs;
-          const validated = tool.schema.parse(argsWithContext);
-          const result = await tool.execute(validated, toolContext);
-          outputPayload = result;
-          if (tool.name === "prepare_verified_offer") verifiedOffer = result as VerifiedOfferResult;
-          if (tool.name === "create_sandbox_order") orderCreated = true;
-          await logAudit({
-            conversationId,
-            category: "tool_call",
-            label: tool.label(validated, result),
-            payload: { tool: tool.name, input: validated, result },
-          });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          outputPayload = { error: message };
-          await logAudit({
-            conversationId,
-            category: "tool_call",
-            label: `Error en ${call.name}: ${message}`,
-            payload: { tool: call.name, error: message },
-          });
-        }
+  // Runs tool calls until the model answers with text; null means the
+  // customer opted out mid-turn and nothing more may be sent.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const untilText = async (first: any): Promise<any | null> => {
+    let response = first;
+    for (let iteration = 0; ; iteration++) {
+      const functionCalls = response.output.filter(isFunctionCall);
+      if (functionCalls.length === 0) break;
+      if (iteration >= MAX_TOOL_ITERATIONS) {
+        throw new Error("El agente excedió el límite de pasos de herramientas en un turno.");
       }
 
-      input.push({
-        type: "function_call_output",
-        call_id: call.call_id,
-        output: JSON.stringify(outputPayload),
-      });
+      input = input.concat(response.output);
+
+      for (const call of functionCalls) {
+        if (await isCustomerSuppressed(context.customerId)) return null;
+        const tool = getTool(call.name);
+        let outputPayload: unknown;
+
+        if (!tool) {
+          outputPayload = { error: `Herramienta desconocida: ${call.name}` };
+        } else {
+          try {
+            const parsedArgs: unknown = JSON.parse(call.arguments || "{}");
+            // Belt-and-suspenders: even though the model never sees these
+            // fields in the tool schema (see getOpenAiToolDefinitions), force
+            // them here too in case a tool's own schema still requires them.
+            const argsWithContext =
+              typeof parsedArgs === "object" && parsedArgs !== null
+                ? { ...parsedArgs, customerId: toolContext.customerId, conversationId: toolContext.conversationId }
+                : parsedArgs;
+            const validated = tool.schema.parse(argsWithContext);
+            const result = await tool.execute(validated, toolContext);
+            outputPayload = result;
+            if (tool.name === "prepare_verified_offer") verifiedOffer = result as VerifiedOfferResult;
+            if (tool.name === "create_sandbox_order") orderCreated = true;
+            await logAudit({
+              conversationId,
+              category: "tool_call",
+              label: tool.label(validated, result),
+              payload: { tool: tool.name, input: validated, result },
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            outputPayload = { error: message };
+            await logAudit({
+              conversationId,
+              category: "tool_call",
+              label: `Error en ${call.name}: ${message}`,
+              payload: { tool: call.name, error: message },
+            });
+          }
+        }
+
+        input.push({
+          type: "function_call_output",
+          call_id: call.call_id,
+          output: JSON.stringify(outputPayload),
+        });
+      }
+
+      if (await isCustomerSuppressed(context.customerId)) return null;
+      response = await client.responses.create({ model, instructions, input, tools });
     }
+    return response;
+  };
 
-    if (await isCustomerSuppressed(context.customerId)) return "";
-    response = await client.responses.create({ model, instructions, input, tools });
-  }
-
+  let response = await untilText(await client.responses.create({ model, instructions, input, tools }));
+  if (!response) return "";
   let reply = toWhatsAppText(response.output_text ?? "");
   if (await isCustomerSuppressed(context.customerId)) return "";
 
@@ -170,6 +190,44 @@ async function executeAgentLoop(
     select id from agente_comercial.approvals
     where conversation_id = ${conversationId} and status = 'pending' limit 1
   `;
+
+  // A follow-up that ignores the conversation is worse than none: the draft
+  // gets one rewrite with the reasons, and is dropped if it still fails.
+  // It never falls back to the generic commercial text below.
+  const followUpContext = opts.followUpContext;
+  if (followUpContext) {
+    const review = (draft: string) => {
+      const issues = followUpReplyIssues(draft, followUpContext).map((i) => FOLLOW_UP_ISSUE_EXPLANATIONS[i]);
+      const commercial = commercialReplyViolations({ reply: draft, verifiedOffer, hasPendingApproval: !!pendingApproval, orderCreated });
+      return commercial.length ? [...issues, COMMERCIAL_FOLLOW_UP_ISSUE] : issues;
+    };
+    let issues = review(reply);
+    if (issues.length) {
+      await logAudit({
+        conversationId,
+        category: "system",
+        label: `Borrador de seguimiento reescrito: ${issues.join("; ")}`.slice(0, 300),
+        payload: { followUpReview: "rewrite", issues, draft: reply },
+      });
+      input = input.concat(response.output, [{
+        role: "user",
+        content: `(Nota interna del sistema, nunca la menciones al cliente.) Tu borrador de seguimiento no sirve porque ${issues.join("; ")}. Escríbelo de nuevo usando el contexto del seguimiento y su enfoque.`,
+      }]);
+      response = await untilText(await client.responses.create({ model, instructions, input, tools }));
+      if (!response) return "";
+      reply = toWhatsAppText(response.output_text ?? "");
+      issues = review(reply);
+      if (issues.length) {
+        await logAudit({
+          conversationId,
+          category: "system",
+          label: `Seguimiento no enviado: el borrador seguía sin encajar con la conversación (${issues.join("; ")})`.slice(0, 300),
+          payload: { followUpReview: "dropped", issues, draft: reply },
+        });
+        return "";
+      }
+    }
+  }
   const violations = commercialReplyViolations({
     reply,
     verifiedOffer,
@@ -267,8 +325,15 @@ export async function startConversation(conversationId: string): Promise<{ reply
 export async function sendFollowUp(conversationId: string, step: FollowUpStep): Promise<{ reply: string }> {
   const context = await loadConversationContext(conversationId);
   const history = await loadHistoryAsInput(conversationId);
+  const followUpContext = await loadFollowUpContext(conversationId);
   const input = [...history, { role: "user" as const, content: "(el cliente no ha respondido)" }];
-  const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, followUp: step, trigger: "follow_up" });
+  const reply = await executeAgentLoop(conversationId, context, input, {
+    isOpeningMessage: false,
+    followUp: step,
+    followUpBrief: renderFollowUpBrief(followUpContext, step.step),
+    followUpContext,
+    trigger: "follow_up",
+  });
   return { reply };
 }
 

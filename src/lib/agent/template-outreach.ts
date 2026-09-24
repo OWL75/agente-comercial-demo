@@ -8,7 +8,6 @@ import {
   sendWhatsAppTemplate,
 } from "@/lib/channel/whatsapp-client";
 import {
-  FOLLOW_UP_TEMPLATES,
   TEMPLATE_LANGUAGE,
   openingTemplateForSignal,
   renderTemplate,
@@ -19,6 +18,8 @@ import {
 import { getFrequentProducts } from "@/lib/db/customer-detail";
 import { saveCustomerInsight } from "@/lib/tools/customer";
 import { formatUnitPrice } from "@/lib/format";
+import { followUpTemplateCandidates } from "@/lib/agent/follow-up-context";
+import { loadFollowUpContext, sentTemplateNames } from "@/lib/agent/follow-up-data";
 
 const FALLBACK_PRODUCT = "tus productos habituales";
 
@@ -88,10 +89,29 @@ export async function hasOpenServiceWindow(customerId: string): Promise<boolean>
   return Boolean(row?.open);
 }
 
-export async function conversationNeedsTemplate(conversationId: string): Promise<boolean> {
+/** Any customer message in this conversation (WhatsApp or panel) in the last 24 h. */
+async function customerWroteRecently(conversationId: string): Promise<boolean> {
+  const [row] = await sql`
+    select exists (
+      select 1 from agente_comercial.messages
+      where conversation_id = ${conversationId} and sender = 'customer' and created_at > now() - interval '24 hours'
+    ) as recent
+  `;
+  return Boolean(row?.recent);
+}
+
+export async function conversationNeedsTemplate(
+  conversationId: string,
+  purpose: "opening" | "follow_up" = "opening",
+): Promise<boolean> {
   const mode = templateDeliveryMode();
-  // The demo deliberately shows the approved copy on every opening/follow-up.
-  if (mode === "simulate") return true;
+  if (mode === "simulate") {
+    // The demo shows the approved copy on openings. A follow-up inside the
+    // 24 h window is written by the agent from the conversation, exactly as
+    // production would do: a fixed template there ignores what was said.
+    if (purpose === "opening") return true;
+    return !(await customerWroteRecently(conversationId));
+  }
   if (mode !== "meta" || !isWhatsAppConfigured()) return false;
   const target = await loadTarget(conversationId);
   if (!target.customerPhone) return false;
@@ -133,10 +153,24 @@ export async function buildOpeningTemplate(conversationId: string): Promise<Temp
   return buildChoice(target, openingTemplateForSignal(target.signalType));
 }
 
-export async function buildFollowUpTemplate(conversationId: string, step: number): Promise<TemplateChoice> {
-  const template = FOLLOW_UP_TEMPLATES[step];
-  if (!template) throw new Error(`No hay plantilla para el seguimiento ${step}.`);
-  return buildChoice(await loadTarget(conversationId), template);
+/** The approved template that fits what was already said, or null when none does. */
+export async function buildFollowUpTemplate(conversationId: string, step: number): Promise<TemplateChoice | null> {
+  const context = await loadFollowUpContext(conversationId);
+  const candidates = followUpTemplateCandidates({
+    step,
+    customerReplied: context.customerReplied,
+    objectionTypes: context.objectionTypes,
+    quantityKnown: context.quantityKnown,
+    alreadySent: await sentTemplateNames(conversationId),
+  });
+  const target = await loadTarget(conversationId);
+  for (const candidate of candidates) {
+    // buildChoice degrades a template when its data (e.g. a current price) is
+    // missing; the degraded copy was not chosen for this conversation.
+    const choice = await buildChoice(target, candidate);
+    if (choice.name === candidate) return choice;
+  }
+  return null;
 }
 
 /**
