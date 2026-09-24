@@ -49,8 +49,7 @@ describe("template outreach delivery modes", () => {
   it("sends the exact copy with interactive buttons when the demo phone opened the service window", async () => {
     sqlMock
       .mockResolvedValueOnce([target])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ open: true }]);
+      .mockResolvedValueOnce([]);
 
     await expect(
       sendTemplateMessage("conversation-1", {
@@ -77,11 +76,10 @@ describe("template outreach delivery modes", () => {
     );
   });
 
-  it("keeps the simulated template visible in the panel when the phone window is closed", async () => {
+  it("lets Meta decide the real window instead of blocking from a stale local timestamp", async () => {
     sqlMock
       .mockResolvedValueOnce([target])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ open: false }]);
+      .mockResolvedValueOnce([]);
 
     await expect(
       sendTemplateMessage("conversation-1", {
@@ -90,10 +88,10 @@ describe("template outreach delivery modes", () => {
       }),
     ).resolves.toContain("Hola Empresa Demo");
 
-    expect(sendWhatsAppInteractiveButtonsMock).not.toHaveBeenCalled();
+    expect(sendWhatsAppInteractiveButtonsMock).toHaveBeenCalledOnce();
     expect(logAuditMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        payload: { template: "apertura_recompra", deliveryMode: "simulate", panelOnly: true },
+        payload: { template: "apertura_recompra", deliveryMode: "simulate" },
       }),
     );
   });

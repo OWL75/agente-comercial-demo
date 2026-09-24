@@ -11,7 +11,7 @@ Plantillas que usa el agente comercial para escribir a un cliente fuera de la ve
 
 ### Modo demo
 
-Con `WHATSAPP_TEMPLATE_MODE=simulate`, las aperturas y los cuatro seguimientos usan siempre el texto exacto del catálogo. Si el teléfono demo escribió durante las últimas 24 horas, se entregan como mensajes interactivos con botones de respuesta; así se puede grabar una demostración fiel antes de registrar y pagar las plantillas reales. Si la ventana está cerrada, el mensaje queda visible en el panel, pero no se intenta infringir las reglas del canal.
+Con `WHATSAPP_TEMPLATE_MODE=simulate`, las aperturas y los cuatro seguimientos usan siempre el texto exacto del catálogo. Si el teléfono demo escribió durante las últimas 24 horas, se entregan como mensajes interactivos con botones de respuesta; así se puede grabar una demostración fiel antes de registrar y pagar las plantillas reales. La aplicación intenta el envío y deja que WhatsApp determine si su ventana real está abierta; para una demo repetible, reinicia el escenario, escribe `Hola` desde el teléfono demo y después inicia la conversación.
 
 ## Cuándo usa el sistema cada plantilla
 

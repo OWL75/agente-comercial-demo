@@ -168,15 +168,9 @@ export async function sendTemplateMessage(conversationId: string, choice: Templa
 
   try {
     if (mode === "simulate") {
-      if (!(await hasOpenServiceWindow(target.customerId))) {
-        await logAudit({
-          conversationId,
-          category: "system",
-          label: `Plantilla "${choice.name}" simulada en el panel; no se envió a WhatsApp porque el teléfono demo no abrió la ventana de 24 h.`,
-          payload: { template: choice.name, deliveryMode: mode, panelOnly: true },
-        });
-        return text;
-      }
+      // Do not second-guess Meta with a local timestamp. Resetting the demo can
+      // delete the conversation that contained the inbound message while the
+      // provider's real 24 h session is still open. Meta remains authoritative.
       await sendWhatsAppInteractiveButtons(
         target.customerPhone,
         text,
