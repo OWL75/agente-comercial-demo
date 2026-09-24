@@ -8,7 +8,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
  */
 
 type Step = { calls: Array<[string, Record<string, unknown>]> } | { say: string };
-type Sent = { chatId: number | string; text: string; markup?: Record<string, unknown>; messageId: number };
 
 const h = vi.hoisted(() => ({
   script: [] as Array<{ calls: Array<[string, Record<string, unknown>]> } | { say: string }>,

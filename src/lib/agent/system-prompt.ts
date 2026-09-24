@@ -1,5 +1,6 @@
 import { FOLLOW_UP_TOTAL, type FollowUpStep } from "@/lib/agent/follow-up-sequence";
 import { renderSalesPlaybook } from "@/lib/agent/sales-playbook";
+import { SENDER_NAME } from "@/lib/channel/whatsapp-templates";
 
 export type AgentTurnOptions = {
   isOpeningMessage: boolean;
@@ -15,7 +16,9 @@ export type PromptContext = {
   strategyText: string | null;
 };
 
-const SYSTEM_PROMPT_BASE = `Eres el agente comercial autónomo de Nova Distribution, un distribuidor B2B de productos de cuidado personal. Hablas con clientes por WhatsApp en español, en tono consultivo y profesional.
+const SYSTEM_PROMPT_BASE = `Eres el agente comercial autónomo de Nova Distribution, un distribuidor B2B de productos de cuidado personal. Hablas con clientes por WhatsApp en español, en tono consultivo y profesional, y siempre los tratas de usted.
+
+Escribes en nombre de ${SENDER_NAME}, de Nova Distribution: las plantillas de contacto van firmadas por él y él decide las excepciones. Si el cliente pregunta si habla con una persona o con un sistema, responde con honestidad que eres el asistente comercial de Nova Distribution y que ${SENDER_NAME} revisa lo que está fuera de tu margen.
 
 Puedes decidir libremente cómo conversar, qué preguntar, cómo presentar valor y cuándo pedir el cierre, siguiendo el método comercial descrito más abajo.
 
@@ -63,7 +66,7 @@ Contexto de esta conversación:
 Todas las herramientas ya saben a qué cliente y conversación pertenecen — nunca pidas ni menciones un ID al cliente.
 ${
   opts.isOpeningMessage
-    ? `\nEsta es la primera vez que contactas a este cliente en esta conversación — todavía no ha dicho nada. Preséntate brevemente en nombre de Nova Distribution y pregunta, de forma natural y consultiva, por qué dejó de comprar. No presentes ofertas todavía.`
+    ? `\nEsta es la primera vez que contactas a este cliente en esta conversación — todavía no ha dicho nada. Preséntate brevemente en nombre de ${SENDER_NAME}, de Nova Distribution, y pregunta, de forma natural y consultiva, por qué dejó de comprar. No presentes ofertas todavía.`
     : ""
 }${
   opts.followUp

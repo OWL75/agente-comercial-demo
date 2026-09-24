@@ -616,17 +616,17 @@ describe("contextual follow-ups (real Belleza del Istmo conversation)", () => {
     await simulateCustomerSilence(conversationId);
 
     const sent = (await agentMessages()).at(-1)!;
-    expect(sent).toContain("hoy tenemos disponibilidad a $18.50 por unidad");
-    expect(sent).not.toMatch(/Están cubiertos/);
+    expect(sent).toContain("hoy tenemos disponibilidad para su pedido habitual de 50 unidades");
+    expect(sent).not.toMatch(/retomo mi mensaje/i);
   });
 
-  it("falls back to the next fitting template when the price template lacks data", async () => {
+  it("falls back to the next fitting template when there is no order history to back the value template", async () => {
     await replay();
     await database.query("update agente_comercial.messages set created_at = created_at - interval '2 days' where conversation_id=$1", [conversationId]);
 
     await simulateCustomerSilence(conversationId);
 
-    expect((await agentMessages()).at(-1)).toMatch(/puedo revisar precio, volumen o entrega contigo/);
+    expect((await agentMessages()).at(-1)).toMatch(/¿Es el precio, la entrega o ya están cubiertos\?/);
   });
 
   it("skips the touch rather than repeat a template or send one that contradicts the conversation", async () => {

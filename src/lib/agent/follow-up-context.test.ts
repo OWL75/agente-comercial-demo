@@ -47,8 +47,8 @@ describe("follow-up context from the real conversation", () => {
     expect(brief).toMatch(/Retoma el punto que quedó abierto/);
   });
 
-  it("gives step 2 a focus tied to the delivery concern", () => {
-    expect(renderFollowUpBrief(ctx, 2)).toMatch(/cumplimiento[\s\S]*get_delivery_options/);
+  it("gives the first touch a focus tied to the delivery concern", () => {
+    expect(renderFollowUpBrief(ctx, 1)).toMatch(/cumplimiento[\s\S]*get_delivery_options/);
   });
 
   it("rejects the follow-up that was actually sent", () => {
@@ -83,7 +83,7 @@ describe("approved-template choice when the 24 h window is closed", () => {
   const base = { customerReplied: true, objectionTypes: ["precio", "servicio"], quantityKnown: false, alreadySent: ["apertura_recompra"] };
 
   it("never sends the ¿están cubiertos? reminder to a customer who explained their situation", () => {
-    for (const step of [1, 2, 3]) expect(chooseFollowUpTemplate({ ...base, step })).not.toBe("seguimiento_recordatorio");
+    for (const step of [1, 2, 3]) expect(chooseFollowUpTemplate({ ...base, step })).not.toMatch(/recordatorio/);
   });
 
   it("answers a price comparison with the verified-price template first", () => {
@@ -93,16 +93,13 @@ describe("approved-template choice when the 24 h window is closed", () => {
   it("uses the angle template for a service concern and never repeats a template", () => {
     expect(chooseFollowUpTemplate({ ...base, objectionTypes: ["servicio"], step: 1 })).toBe("seguimiento_angulo");
     expect(chooseFollowUpTemplate({ ...base, step: 2, alreadySent: ["seguimiento_valor"] })).toBe("seguimiento_angulo");
-    expect(chooseFollowUpTemplate({ ...base, step: 3, alreadySent: ["seguimiento_valor", "seguimiento_angulo"] })).toBeNull();
+    expect(chooseFollowUpTemplate({ ...base, step: 2, alreadySent: ["seguimiento_valor", "seguimiento_angulo"] })).toBeNull();
+    expect(chooseFollowUpTemplate({ ...base, step: 3, alreadySent: ["seguimiento_cierre"] })).toBeNull();
   });
 
-  it("does not ask for the volume when it is already known", () => {
-    expect(chooseFollowUpTemplate({ ...base, quantityKnown: true, step: 1 })).toBe("seguimiento_angulo");
-  });
-
-  it("keeps the classic order for a customer who never replied, and closes at step 4", () => {
-    expect(chooseFollowUpTemplate({ ...base, customerReplied: false, step: 1 })).toBe("seguimiento_recordatorio");
-    expect(chooseFollowUpTemplate({ ...base, customerReplied: false, step: 2 })).toBe("seguimiento_valor");
-    expect(chooseFollowUpTemplate({ ...base, step: 4 })).toBe("seguimiento_cierre");
+  it("brings value first to a customer who never replied, then an angle, and closes at the last step", () => {
+    expect(chooseFollowUpTemplate({ ...base, customerReplied: false, step: 1 })).toBe("seguimiento_valor");
+    expect(chooseFollowUpTemplate({ ...base, customerReplied: false, step: 2 })).toBe("seguimiento_angulo");
+    expect(chooseFollowUpTemplate({ ...base, step: 3 })).toBe("seguimiento_cierre");
   });
 });

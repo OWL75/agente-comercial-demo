@@ -4,11 +4,12 @@ import { logAudit } from "@/lib/agent/audit";
 import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
 import {
   isWhatsAppConfigured,
-  sendWhatsAppMessage,
+  sendWhatsAppButtons,
   sendWhatsAppTemplate,
 } from "@/lib/channel/whatsapp-client";
 import {
   TEMPLATE_LANGUAGE,
+  WHATSAPP_TEMPLATES,
   openingTemplateForSignal,
   renderTemplate,
   sanitizeTemplateParam,
@@ -17,11 +18,10 @@ import {
 } from "@/lib/channel/whatsapp-templates";
 import { getFrequentProducts } from "@/lib/db/customer-detail";
 import { saveCustomerInsight } from "@/lib/tools/customer";
-import { formatUnitPrice } from "@/lib/format";
 import { followUpTemplateCandidates } from "@/lib/agent/follow-up-context";
 import { loadFollowUpContext, sentTemplateNames } from "@/lib/agent/follow-up-data";
 
-const FALLBACK_PRODUCT = "tus productos habituales";
+const FALLBACK_PRODUCT = "sus productos habituales";
 
 export type TemplateDeliveryMode = "disabled" | "simulate" | "meta";
 
@@ -118,39 +118,55 @@ export async function conversationNeedsTemplate(
   return !(await hasOpenServiceWindow(target.customerId));
 }
 
-/** Reads price and stock from the same catalog the agent's tools use; null when it can't be offered. */
-async function availableUnitPrice(sku: string): Promise<string | null> {
-  const [product] = await sql`select unit_price, stock from agente_comercial.products where sku = ${sku}`;
-  if (!product || Number(product.stock) <= 0) return null;
-  return formatUnitPrice(Number(product.unit_price));
+type LastOrder = { quantity: number; weeksAgo: number; stock: number };
+
+/** The customer's most recent order of their usual product, plus current stock for it. */
+async function lastOrderOf(customerId: string, sku: string): Promise<LastOrder | null> {
+  const [row] = await sql`
+    select pi.quantity, (current_date - pu.purchase_date) as days_ago, p.stock
+    from agente_comercial.purchase_items pi
+    join agente_comercial.purchases pu on pu.id = pi.purchase_id
+    join agente_comercial.products p on p.id = pi.product_id
+    where pu.customer_id = ${customerId} and p.sku = ${sku}
+    order by pu.purchase_date desc limit 1
+  `;
+  if (!row || !(Number(row.quantity) > 0)) return null;
+  return {
+    quantity: Number(row.quantity),
+    weeksAgo: Math.max(1, Math.round(Number(row.days_ago) / 7)),
+    stock: Number(row.stock),
+  };
 }
 
-async function buildChoice(target: OutreachTarget, preferred: TemplateName): Promise<TemplateChoice> {
+/**
+ * Parameters for a template from real data, or null when the data it states
+ * is missing: a template never goes out with a claim it cannot back up.
+ */
+async function buildChoice(target: OutreachTarget, template: TemplateName): Promise<TemplateChoice | null> {
   const [product] = await getFrequentProducts(target.customerId, 1);
-  const name = sanitizeTemplateParam(target.customerName);
+  const company = sanitizeTemplateParam(target.customerName);
   const productName = sanitizeTemplateParam(product?.name ?? FALLBACK_PRODUCT);
+  const last = product ? await lastOrderOf(target.customerId, product.sku) : null;
 
-  if (preferred === "apertura_recompra") {
-    if (product && target.daysSinceLastPurchase != null) {
-      return { name: preferred, params: [name, productName] };
-    }
-    return { name: "apertura_reactivacion", params: [name, productName] };
+  switch (template) {
+    case "apertura_recompra":
+      return last ? { name: template, params: [company, String(last.quantity), productName, String(last.weeksAgo)] } : null;
+    case "seguimiento_valor":
+      // "hoy tenemos disponibilidad" must be true for the full usual order.
+      return last && last.stock >= last.quantity ? { name: template, params: [productName, String(last.quantity)] } : null;
+    case "apertura_reactivacion":
+    case "apertura_producto":
+      return { name: template, params: [company, productName] };
+    default:
+      return { name: template, params: [productName] };
   }
-
-  if (preferred === "apertura_producto" || preferred === "seguimiento_valor") {
-    const price = product ? await availableUnitPrice(product.sku) : null;
-    if (price) return { name: preferred, params: [name, productName, price] };
-    return preferred === "apertura_producto"
-      ? { name: "apertura_reactivacion", params: [name, productName] }
-      : { name: "seguimiento_recordatorio", params: [name, productName] };
-  }
-
-  return { name: preferred, params: [name, productName] };
 }
 
 export async function buildOpeningTemplate(conversationId: string): Promise<TemplateChoice> {
   const target = await loadTarget(conversationId);
-  return buildChoice(target, openingTemplateForSignal(target.signalType));
+  const preferred = await buildChoice(target, openingTemplateForSignal(target.signalType));
+  // apertura_reactivacion needs no order history, so it always exists.
+  return preferred ?? (await buildChoice(target, "apertura_reactivacion"))!;
 }
 
 /** The approved template that fits what was already said, or null when none does. */
@@ -165,10 +181,8 @@ export async function buildFollowUpTemplate(conversationId: string, step: number
   });
   const target = await loadTarget(conversationId);
   for (const candidate of candidates) {
-    // buildChoice degrades a template when its data (e.g. a current price) is
-    // missing; the degraded copy was not chosen for this conversation.
     const choice = await buildChoice(target, candidate);
-    if (choice.name === candidate) return choice;
+    if (choice) return choice;
   }
   return null;
 }
@@ -204,7 +218,9 @@ export async function sendTemplateMessage(conversationId: string, choice: Templa
       // Do not second-guess Meta with a local timestamp. Resetting the demo can
       // delete the conversation that contained the inbound message while the
       // provider's real 24 h session is still open. Meta remains authoritative.
-      await sendWhatsAppMessage(target.customerPhone, text);
+      // Inside the session the template's quick replies become reply buttons.
+      const template = WHATSAPP_TEMPLATES[choice.name];
+      await sendWhatsAppButtons(target.customerPhone, text, template.buttons, template.footer);
     } else if (mode === "meta") {
       await sendWhatsAppTemplate(target.customerPhone, choice.name, TEMPLATE_LANGUAGE, choice.params);
     } else {

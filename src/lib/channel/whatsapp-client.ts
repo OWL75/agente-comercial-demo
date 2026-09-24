@@ -27,6 +27,33 @@ export async function sendWhatsAppMessage(toPhone: string, body: string): Promis
   });
 }
 
+/**
+ * Session-window message with up to three quick-reply buttons: how demo mode
+ * reproduces a template's buttons. The customer's tap arrives as a
+ * button_reply whose title the webhook passes to the agent as text.
+ */
+export async function sendWhatsAppButtons(
+  toPhone: string,
+  body: string,
+  buttons: readonly string[],
+  footer?: string,
+): Promise<{ messageId: string | null }> {
+  if (buttons.length === 0) return sendWhatsAppMessage(toPhone, footer ? `${body}\n\n${footer}` : body);
+  return postMessage({
+    messaging_product: "whatsapp",
+    to: toPhone.replace(/\D/g, ""),
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: body },
+      ...(footer ? { footer: { text: footer } } : {}),
+      action: {
+        buttons: buttons.slice(0, 3).map((title, index) => ({ type: "reply", reply: { id: `qr_${index + 1}`, title: title.slice(0, 20) } })),
+      },
+    },
+  });
+}
+
 /** Sends a Meta-approved template; the only kind of message allowed outside the 24 h window. */
 export async function sendWhatsAppTemplate(
   toPhone: string,

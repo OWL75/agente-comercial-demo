@@ -7,38 +7,33 @@ export type FollowUpStep = {
   instruction: string;
 };
 
+// Three touches on a widening cadence. Every marketing template counts
+// against Meta's per-user limit, so a same-day "just checking in" reminder
+// (the former +4 h step) was dropped: each touch has to bring something new.
 export const FOLLOW_UP_STEPS: readonly FollowUpStep[] = [
   {
     step: 1,
-    title: "Recordatorio ligero",
-    productionDelay: "+4 h hábiles sin respuesta",
-    requiresTemplate: false,
+    title: "Aporte de valor",
+    productionDelay: "+2 días hábiles sin respuesta",
+    requiresTemplate: true,
     instruction:
-      "Retoma el hilo: vuelve sobre lo que quedó abierto, de forma más fácil de responder. Sin oferta nueva ni presión.",
+      "Retoma el hilo con algo nuevo y verificado con las herramientas que responda a su situación, y cierra con una propuesta pequeña y fácil de aceptar. No inventes ningún dato.",
   },
   {
     step: 2,
-    title: "Aporte de valor",
-    productionDelay: "+2 días (plantilla aprobada)",
-    requiresTemplate: true,
-    instruction:
-      "Aporta algo nuevo, verificado con las herramientas, que responda a la preocupación concreta del cliente, y cierra con una propuesta pequeña y fácil de aceptar. No inventes ningún dato.",
-  },
-  {
-    step: 3,
     title: "Otro ángulo",
-    productionDelay: "+5 días (plantilla aprobada)",
+    productionDelay: "+7 días (plantilla aprobada)",
     requiresTemplate: true,
     instruction:
       "Cambia de ángulo respecto a tus mensajes anteriores y ofrece una alternativa que sí esté permitida por las herramientas. Sin tono de reclamo.",
   },
   {
-    step: 4,
+    step: 3,
     title: "Cierre del ciclo",
-    productionDelay: "+10 días (plantilla aprobada)",
+    productionDelay: "+14 días (plantilla aprobada)",
     requiresTemplate: true,
     instruction:
-      "Despedida respetuosa: di que no volverás a escribir sobre este tema, deja la puerta abierta y agradece. Sin culpa ni urgencia artificial.",
+      "Despedida respetuosa: di que no volverás a escribir sobre este tema, deja la puerta abierta y ofrece escribirle más adelante si lo prefiere. Sin culpa ni urgencia artificial.",
   },
 ];
 

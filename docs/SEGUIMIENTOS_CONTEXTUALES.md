@@ -63,3 +63,5 @@ No se modificaron los cuerpos de las plantillas de Meta, porque cambiarlos exige
 - La calidad del texto sigue dependiendo del modelo. La revisión determinista bloquea errores conocidos, no garantiza un mensaje excelente. Hay que revisar seguimientos reales con el modelo en vivo.
 - Las plantillas aprobadas son genéricas por diseño. Una plantilla con una variable de contexto (por ejemplo, "sobre lo que me comentaste de {{2}}") mejoraría el seguimiento con la ventana cerrada, pero requiere registrarla y que Meta la apruebe.
 - El botón de la demo envía el siguiente toque de inmediato. En producción, los tiempos serían los de cada paso (+4 h, +2 días, …).
+
+> Actualización (plantillas v2): la secuencia pasó a 3 toques (+2 días hábiles, +7, +14) y se eliminó `seguimiento_recordatorio`. Ver `docs/PLANTILLAS_META.md`.

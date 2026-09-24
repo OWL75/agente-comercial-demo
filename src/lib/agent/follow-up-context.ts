@@ -5,6 +5,7 @@
  * stored conversation, the tests feed them real transcripts.
  */
 import { OBJECTION_TYPES } from "@/lib/agent/sales-playbook";
+import { FOLLOW_UP_TOTAL } from "@/lib/agent/follow-up-sequence";
 import type { TemplateName } from "@/lib/channel/whatsapp-templates";
 
 export type FollowUpMessage = { sender: string; body: string; createdAt: Date };
@@ -116,20 +117,19 @@ function objectionFocus(ctx: FollowUpContext): string {
 }
 
 export function followUpFocus(ctx: FollowUpContext, step: number): string {
-  if (step >= 4) {
+  if (step >= FOLLOW_UP_TOTAL) {
     return "Cierra el ciclo con respeto, mencionando su situación en una frase. Di que no vas a insistir, deja la puerta abierta y ofrece escribirle más adelante solo si lo prefiere. Sin culpa ni urgencia.";
   }
   if (!ctx.customerReplied) {
-    if (step === 1) return "El cliente no respondió tu apertura. Retómala con una pregunta todavía más fácil (sí/no o dos opciones). No repitas la misma pregunta.";
-    if (step === 2) return "Aporta un dato verificable y útil sobre su producto habitual y termina con una propuesta fácil de aceptar.";
-    return "Pregunta con naturalidad si cambió la necesidad o si otra persona se encarga ahora de las compras.";
+    if (step === 1) return "El cliente no respondió tu apertura. Aporta un dato verificable y útil sobre su producto habitual (disponibilidad, su pedido de siempre) y termina con una propuesta fácil de aceptar, de sí o no. No repitas la pregunta de la apertura.";
+    return "Pregunta con naturalidad si cambió la necesidad o si otra persona se encarga ahora de las compras, con opciones fáciles de responder.";
   }
   if (step === 1) {
-    return ctx.pendingQuestion
-      ? `Retoma el punto que quedó abierto (${ctx.pendingQuestion}) mostrando que recuerdas lo que te dijo. Hazlo más fácil de responder: reformúlalo o da dos o tres opciones concretas ligadas a su situación. No presentes una oferta nueva.`
-      : "Retoma lo último que te dijo y proponle un siguiente paso pequeño y concreto.";
+    const pending = ctx.pendingQuestion
+      ? `Retoma el punto que quedó abierto (${ctx.pendingQuestion}) mostrando que recuerdas lo que te dijo, y hazlo más fácil de responder. `
+      : "Retoma lo último que te dijo. ";
+    return `${pending}${objectionFocus(ctx)}`;
   }
-  if (step === 2) return objectionFocus(ctx);
   return "Cambia de ángulo sin repetir los anteriores: un pedido de prueba de bajo riesgo si mostró interés, la persona que decide las compras, o el momento de su próxima reposición. Una sola propuesta.";
 }
 
@@ -251,9 +251,9 @@ export function followUpReplyIssues(reply: string, ctx: FollowUpContext): Follow
 
 /**
  * Only approved copy can go out, so the choice is among existing templates:
- * never the "¿están cubiertos?" reminder once the customer explained their
- * situation, never the same template twice, and never a template that asks
- * for the volume when it is already known. null means none fits: skip.
+ * price objections get the verified-availability template first, anything
+ * else the angle template; never the same template twice. The caller skips a
+ * template it lacks data for. null means none fits: skip the touch.
  */
 type TemplateArgs = {
   step: number;
@@ -266,15 +266,13 @@ type TemplateArgs = {
 /** Fitting templates for this touch, best first (the caller may still lack data for one). */
 export function followUpTemplateCandidates(args: TemplateArgs): TemplateName[] {
   const unsent = (names: TemplateName[]) => names.filter((n) => !args.alreadySent.includes(n));
-  if (args.step >= 4) return unsent(["seguimiento_cierre"]);
+  if (args.step >= FOLLOW_UP_TOTAL) return unsent(["seguimiento_cierre"]);
   if (!args.customerReplied) {
-    const order: TemplateName[] = ["seguimiento_recordatorio", "seguimiento_valor", "seguimiento_angulo"];
-    return unsent([...order.slice(args.step - 1), ...order.slice(0, args.step - 1)]);
+    return unsent(args.step === 1 ? ["seguimiento_valor", "seguimiento_angulo"] : ["seguimiento_angulo", "seguimiento_valor"]);
   }
-  const candidates: TemplateName[] = args.objectionTypes.includes("precio")
+  return unsent(args.objectionTypes.includes("precio")
     ? ["seguimiento_valor", "seguimiento_angulo"]
-    : ["seguimiento_angulo", "seguimiento_valor"];
-  return unsent(candidates.filter((n) => n !== "seguimiento_valor" || !args.quantityKnown));
+    : ["seguimiento_angulo", "seguimiento_valor"]);
 }
 
 export function chooseFollowUpTemplate(args: TemplateArgs): TemplateName | null {
