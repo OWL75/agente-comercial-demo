@@ -19,6 +19,7 @@ import {
   type FollowUpContext,
 } from "@/lib/agent/follow-up-context";
 import { loadFollowUpContext } from "@/lib/agent/follow-up-data";
+import { askOwner } from "@/lib/agent/owner-notify";
 
 type TurnOptions = AgentTurnOptions & {
   trigger: TurnTrigger;
@@ -27,6 +28,8 @@ type TurnOptions = AgentTurnOptions & {
 };
 
 const COMMERCIAL_FOLLOW_UP_ISSUE = "incluye precio, descuento, total o entrega sin una oferta verificada";
+
+const UNVERIFIED_TERMS_NOTE = "(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta incluía precio, descuento, total o entrega sin una oferta verificada, así que no se envió. Verifícala ahora con prepare_verified_offer y responde con el resultado en este mismo mensaje. Si el cliente no dio cantidad, usa como propuesta su cantidad habitual del historial (get_purchase_history) y dilo así. Si algo excede tu autonomía, usa request_approval o consult_owner. Si de verdad falta un dato, pregúntalo sin cifras propias. Nunca digas que lo vas a validar más tarde.";
 
 type ConversationContext = {
   customerId: string;
@@ -186,10 +189,14 @@ async function executeAgentLoop(
   let reply = toWhatsAppText(response.output_text ?? "");
   if (await isCustomerSuppressed(context.customerId)) return "";
 
-  const [pendingApproval] = await sql`
-    select id from agente_comercial.approvals
-    where conversation_id = ${conversationId} and status = 'pending' limit 1
-  `;
+  const hasPendingApproval = async () => {
+    const [row] = await sql`
+      select id from agente_comercial.approvals
+      where conversation_id = ${conversationId} and status = 'pending' limit 1
+    `;
+    return !!row;
+  };
+  let pendingApproval = await hasPendingApproval();
 
   // A follow-up that ignores the conversation is worse than none: the draft
   // gets one rewrite with the reasons, and is dropped if it still fails.
@@ -198,7 +205,7 @@ async function executeAgentLoop(
   if (followUpContext) {
     const review = (draft: string) => {
       const issues = followUpReplyIssues(draft, followUpContext).map((i) => FOLLOW_UP_ISSUE_EXPLANATIONS[i]);
-      const commercial = commercialReplyViolations({ reply: draft, verifiedOffer, hasPendingApproval: !!pendingApproval, orderCreated });
+      const commercial = commercialReplyViolations({ reply: draft, verifiedOffer, hasPendingApproval: pendingApproval, orderCreated });
       return commercial.length ? [...issues, COMMERCIAL_FOLLOW_UP_ISSUE] : issues;
     };
     let issues = review(reply);
@@ -228,12 +235,28 @@ async function executeAgentLoop(
       }
     }
   }
-  const violations = commercialReplyViolations({
-    reply,
-    verifiedOffer,
-    hasPendingApproval: !!pendingApproval,
-    orderCreated,
-  });
+  const violationsOf = (draft: string) =>
+    commercialReplyViolations({ reply: draft, verifiedOffer, hasPendingApproval: pendingApproval, orderCreated });
+  let violations = violationsOf(reply);
+
+  // The customer usually won't write again, so "let me validate" must not be a
+  // dead end: the agent verifies and answers in this same turn. If it still
+  // can't, the owner is consulted on Telegram and their answer resumes the chat.
+  if (violations.length && opts.trigger === "customer_message") {
+    await logAudit({
+      conversationId,
+      category: "system",
+      label: "Respuesta con condiciones sin verificar: el agente la verifica y la reescribe",
+      payload: { violations, draft: reply },
+    });
+    input = input.concat(response.output, [{ role: "user", content: UNVERIFIED_TERMS_NOTE }]);
+    response = await untilText(await client.responses.create({ model, instructions, input, tools }));
+    if (!response) return "";
+    reply = toWhatsAppText(response.output_text ?? "");
+    pendingApproval = await hasPendingApproval();
+    violations = violationsOf(reply);
+  }
+
   let presentedVerifiedOffer = false;
   if (violations.length) {
     await logAudit({
@@ -242,7 +265,12 @@ async function executeAgentLoop(
       label: "Respuesta comercial bloqueada por verificación determinística",
       payload: { violations },
     });
-    reply = guardedFallback(!!pendingApproval);
+    const ownerConsulted = opts.trigger === "customer_message" && !pendingApproval &&
+      await askOwner(
+        conversationId,
+        `No logré armar una oferta verificada para responder al cliente: «${opts.customerMessage ?? ""}». ¿Cómo quieres que siga?`,
+      );
+    reply = guardedFallback(pendingApproval, ownerConsulted);
   } else presentedVerifiedOffer = presentsFinalVerifiedOffer(reply, verifiedOffer);
 
   await sql`
@@ -353,7 +381,30 @@ export async function resumeAfterHumanDecision(
     ...history,
     {
       role: "system" as const,
-      content: `Un humano acaba de decidir sobre la aprobación pendiente: ${decisionSummary} Continúa la conversación con el cliente reflejando esta decisión de forma natural y, si corresponde, resume la oferta vigente y pide su confirmación explícita: el pedido solo puede crearse cuando el cliente responda confirmando. Actualiza la etapa con update_opportunity_stage si corresponde.`,
+      content: `Un humano acaba de decidir sobre la aprobación pendiente: ${decisionSummary} El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo consultaste y refleja la decisión. Si quedó aprobada, verifica la oferta con prepare_verified_offer y, si queda ready, preséntala completa y pide su confirmación explícita; si fue rechazada, ofrece la mejor alternativa dentro de tu autonomía. El pedido solo puede crearse cuando el cliente responda confirmando. Actualiza la etapa con update_opportunity_stage si corresponde.`,
+    },
+  ];
+  const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" });
+  return { reply };
+}
+
+/**
+ * Runs when the owner answers a consult_owner question on Telegram. The
+ * answer is guidance, not an override: prices, discounts, credit and orders
+ * still go through the same tools and policy checks.
+ */
+export async function resumeAfterOwnerAnswer(
+  conversationId: string,
+  question: string,
+  answer: string,
+): Promise<{ reply: string }> {
+  const context = await loadConversationContext(conversationId);
+  const history = await loadHistoryAsInput(conversationId);
+  const input = [
+    ...history,
+    {
+      role: "system" as const,
+      content: `Consultaste al dueño: "${question}". Su respuesta: "${answer}". El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo consultaste y lleva la conversación hacia el cierre con esa indicación. Todo precio, descuento, crédito o entrega que menciones debe salir de prepare_verified_offer; si la indicación excede la política, las herramientas lo rechazarán y deberás ofrecer la mejor alternativa permitida. Nunca menciones al dueño por su nombre ni cites su mensaje literal.`,
     },
   ];
   const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" });

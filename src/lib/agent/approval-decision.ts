@@ -26,7 +26,8 @@ export async function decideApproval(
   approvalId: string,
   action: ApprovalAction,
   modifiedValue?: number,
-): Promise<{ conversationId: string }> {
+  decidedBy = "Gerente comercial",
+): Promise<{ conversationId: string; summary: string; reply: string }> {
   const approval = await getApprovalDetail(approvalId);
   if (!approval) throw new Error(`Aprobación ${approvalId} no encontrada`);
   if (!["approve", "modify", "reject"].includes(action)) throw new Error("Acción inválida.");
@@ -65,7 +66,7 @@ export async function decideApproval(
     update agente_comercial.approvals
     set status = ${status},
         decided_value = ${toJsonb(decidedValue)},
-        decided_by = 'Gerente comercial',
+        decided_by = ${decidedBy},
         decided_at = now()
     where id = ${approvalId} and status = 'pending'
       and requested_value = ${toJsonb(approval.requestedValue)}
@@ -81,7 +82,7 @@ export async function decideApproval(
     payload: { approvalId, status, decidedValue },
   });
 
-  await resumeAfterHumanDecision(approval.conversationId, decisionSummary);
+  const { reply } = await resumeAfterHumanDecision(approval.conversationId, decisionSummary);
 
-  return { conversationId: approval.conversationId };
+  return { conversationId: approval.conversationId, summary: decisionSummary, reply };
 }

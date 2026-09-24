@@ -19,6 +19,8 @@ import { createSandboxOrder, createSandboxOrderInput } from "@/lib/tools/orders"
 import { updateOpportunityStage, updateOpportunityStageInput } from "@/lib/tools/stage";
 import { prepareVerifiedOffer, prepareVerifiedOfferInput } from "@/lib/tools/offers";
 import { assertOrderAllowed, type TurnTrigger } from "@/lib/agent/order-guard";
+import { askOwner, notifyOwnerOfApproval } from "@/lib/agent/owner-notify";
+import { z } from "zod";
 
 // Identity the model never has to handle: every tool call in a conversation
 // is scoped to that one conversation and its one customer, so the registry
@@ -129,8 +131,26 @@ export const TOOLS: AnyTool[] = [
     name: "request_approval",
     description: "Crea una solicitud de aprobación humana cuando una condición solicitada por el cliente excede la autonomía del agente (descuento, crédito o entrega). No asumas que fue aprobada: solo queda pendiente hasta que un humano decida.",
     schema: requestApprovalInput,
-    execute: (input, ctx) => requestApproval({ ...input, conversationId: ctx.conversationId, customerId: ctx.customerId }),
+    execute: async (input, ctx) => {
+      const result = await requestApproval({ ...input, conversationId: ctx.conversationId, customerId: ctx.customerId });
+      // After the transaction commits: the owner is asked on Telegram and their
+      // decision makes the agent write to the customer on its own.
+      const ownerNotified = await notifyOwnerOfApproval(result.approvalId);
+      return { ...result, ownerNotified };
+    },
     label: (input) => `Aprobación solicitada: ${input.type}`,
+  }),
+  tool({
+    name: "consult_owner",
+    description: "Consulta al dueño por Telegram un caso que excede tu autonomía y que no es una aprobación de descuento, crédito o entrega (una condición especial, una duda comercial que no puedes resolver con las herramientas). Después dile al cliente que lo estás consultando y que le escribes en breve: cuando el dueño responda, el sistema te pedirá escribirle.",
+    schema: z.object({ question: z.string().min(10).max(600).describe("La consulta concreta, con los datos que el dueño necesita para decidir.") }),
+    execute: async (input, ctx) => {
+      const sent = await askOwner(ctx.conversationId, input.question);
+      return sent
+        ? { sent: true }
+        : { sent: false, note: "No hay canal con el dueño. No prometas volver con una respuesta: resuelve dentro de tu autonomía o deja clara la opción disponible." };
+    },
+    label: (input) => `Consulta al dueño: ${input.question}`.slice(0, 150),
   }),
   tool({
     name: "get_approval_result",

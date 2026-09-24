@@ -100,9 +100,13 @@ export function presentsFinalVerifiedOffer(reply: string, offer: VerifiedOfferRe
     (FIRM_OFFER.test(reply) || moneyValues(reply).some((value) => sameMoney(value, offer.total)));
 }
 
-export function guardedFallback(hasPendingApproval: boolean): string {
+/** Only sent when a promise to come back is real: an approval or an owner question is open. */
+export function guardedFallback(hasPendingApproval: boolean, ownerConsulted = false): string {
   if (hasPendingApproval) {
     return "La condición solicitada todavía requiere aprobación. Ya está en revisión y te confirmo apenas tenga respuesta.";
+  }
+  if (ownerConsulted) {
+    return "Déjame confirmarlo con mi gerente y te escribo en unos minutos con la propuesta.";
   }
   return "Déjame validar precio, descuento, disponibilidad y entrega antes de darte una oferta firme.";
 }

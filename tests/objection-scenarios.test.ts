@@ -78,6 +78,8 @@ function addDays(isoDate: string, days: number): string {
 
 const calls = (...list: Array<[string, Record<string, unknown>]>): Step => ({ calls: list });
 const say = (text: string): Step => ({ say: text });
+/** A draft the commercial guard blocks, and the same draft again on the one allowed rewrite. */
+const blocked = (text: string): Step[] => [say(text), say(text)];
 const save = (fields: Record<string, unknown>): [string, Record<string, unknown>] => ["save_customer_insight", fields];
 const stage = (value: string, nextObjective = "Siguiente paso"): [string, Record<string, unknown>] =>
   ["update_opportunity_stage", { stage: value, nextObjective }];
@@ -167,12 +169,16 @@ const t5 = (pct = 4) => [
     save({ intencionCompra: "Pedido de prueba de 50 unidades", condicionSolicitada: "Entrega 24 h y pago a 30 días", resultado: "en_negociacion" }),
     stage("closing", "Obtener confirmación explícita"),
   ),
-  say(`La oferta final es: 50 Shampoo Professional 1L a $17.76 por unidad con ${pct}% de descuento, total $888.00, entrega en 24 horas y pago a 30 días. ¿Confirmas el pedido?`),
+  // Only 4% yields these figures; any other percentage is blocked as a mismatch.
+  ...(pct === 4 ? (text: string) => [say(text)] : blocked)(
+    `La oferta final es: 50 Shampoo Professional 1L a $17.76 por unidad con ${pct}% de descuento, total $888.00, entrega en 24 horas y pago a 30 días. ¿Confirmas el pedido?`,
+  ),
 ];
 const t6 = (pct = 4) => [
   calls(tool("get_inventory", { sku: SKU }), tool("create_sandbox_order", { items: [{ sku: SKU, quantity: 50 }], discountPct: pct, creditTerms: "30 días", deliveryHours: 24 })),
   calls(save({ resultado: "pedido_confirmado" })),
-  say("Listo, pedido registrado. Te confirmo la entrega en 24 horas."),
+  // Without an order the delivery promise has no verified offer behind it.
+  ...(pct === 4 ? (text: string) => [say(text)] : blocked)("Listo, pedido registrado. Te confirmo la entrega en 24 horas."),
 ];
 
 describe("main objection scenario through the real runtime", () => {
@@ -201,7 +207,7 @@ describe("main objection scenario through the real runtime", () => {
   });
 
   it("flags a discount offered in the first turn", async () => {
-    const eager = [calls(tool("get_discount_policy", { requestedPct: 5 }), save({ competidorMencionado: "Otro" })), say("Te hago 5% ya mismo.")];
+    const eager = [calls(tool("get_discount_policy", { requestedPct: 5 }), save({ competidorMencionado: "Otro" })), ...blocked("Te hago 5% ya mismo.")];
     const trace = await play(MAIN_OBJECTION_SCENARIO, [opening, eager], MAIN_OBJECTION_SCENARIO.messages.slice(0, 1));
     expect(failing(MAIN_OBJECTION_SCENARIO.evaluate(trace, today))).toEqual(expect.arrayContaining([
       "Sin descuento, aprobación ni pedido hasta el turno 1",
@@ -265,7 +271,7 @@ describe("additional objection scenarios through the real runtime", () => {
   it("1b. excess inventory: flags a discount used to push an early purchase", async () => {
     const s = scenario("inventario");
     const trace = await play(s, [
-      [calls(tool("get_discount_policy", { requestedPct: 5 })), say("Si compras hoy te hago 5%.")],
+      [calls(tool("get_discount_policy", { requestedPct: 5 })), ...blocked("Si compras hoy te hago 5%.")],
       [say("Ok.")],
     ]);
     expect(failing(s.evaluate(trace, today))).toEqual(expect.arrayContaining(["No negoció descuento, excepción ni pedido"]));
@@ -337,7 +343,7 @@ describe("additional objection scenarios through the real runtime", () => {
     const trace = await play(s, [
       [calls(save({ productoInteres: "Shampoo Professional 1L", cantidad: 200, condicionSolicitada: "8% de descuento" }),
         tool("get_product_price", { sku: SKU }), tool("get_inventory", { sku: SKU }), tool("get_discount_policy", { requestedPct: 8 })),
-        say("Ese 8% necesito confirmarlo con mi gerente. ¿Es en firme para 200 unidades?")],
+        ...blocked("Ese 8% necesito confirmarlo con mi gerente. ¿Es en firme para 200 unidades?")],
       [calls(tool("request_approval", { type: "discount", productSku: SKU, quantity: 200, requestedPct: 8, reason: "Volumen", agentRecommendation: "Aprobar 8%" })),
         say("Listo, ya lo solicité. Te aviso apenas tenga respuesta.")],
     ]);
@@ -474,7 +480,7 @@ describe("regression: exact Empresa Demo price and delivery conversation", () =>
         }),
         stage("closing"),
       ),
-      say("Confirmé la entrega express en 24 horas. ¿Confirmas el pedido?"),
+      ...blocked("Confirmé la entrega express en 24 horas. ¿Confirmas el pedido?"),
     ];
 
     h.script = [pendingOfferTurn, trustTurn, conditionalAttempt].flat();
