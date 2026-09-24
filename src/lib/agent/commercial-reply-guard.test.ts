@@ -114,3 +114,19 @@ describe("no '0%' discount in customer messages", () => {
       .toContain("zero_discount_mentioned");
   });
 });
+
+describe("internal language", () => {
+  it.each([
+    "Perfecto, puedo igualar esa condición para recuperar su pedido:",
+    "Por debajo de $17.75 no puedo, pero sí igualarlo con condiciones verificadas:",
+    "La oferta verificada queda así",
+  ])("flags %s", async (text) => {
+    const { usesInternalLanguage } = await import("@/lib/agent/commercial-reply-guard");
+    expect(usesInternalLanguage(text)).toBe(true);
+  });
+
+  it("does not flag normal commercial language", async () => {
+    const { usesInternalLanguage } = await import("@/lib/agent/commercial-reply-guard");
+    expect(usesInternalLanguage("Le puedo mejorar el precio a $17.65 por unidad, con entrega al día siguiente.")).toBe(false);
+  });
+});

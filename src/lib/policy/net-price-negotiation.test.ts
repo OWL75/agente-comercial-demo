@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { autonomyFloorUnitPrice, quoteByNetPrice, recommendedResponseUnitPrice } from "@/lib/policy/verified-offer";
+import { autonomyFloorUnitPrice, nextConcession, quoteByNetPrice } from "@/lib/policy/verified-offer";
+
+const floor = 17.58;
+const base = { listUnitPrice: 18.5, floor };
 
 describe("negotiating by price, to the cent", () => {
   it("quotes the customer's exact ask instead of the next whole percent", () => {
@@ -12,15 +15,28 @@ describe("negotiating by price, to the cent", () => {
   });
 
   it("knows the lowest price the agent may give on its own (5% of $18.50)", () => {
-    expect(autonomyFloorUnitPrice(18.5, 5)).toBe(17.58);
+    expect(autonomyFloorUnitPrice(18.5, 5)).toBe(floor);
+  });
+});
+
+describe("next concession", () => {
+  it("accepts an explicit ask within the margin as is: $17.70 is a good price", () => {
+    expect(nextConcession({ ...base, lastOffered: 17.76, ask: 17.7 })).toEqual({ unitPrice: 17.7, basis: "ask", withinAutonomy: true });
   });
 
-  it("accepts an ask within the margin as is: $17.70 is a good price, no counter, no jump to 5%", () => {
-    expect(recommendedResponseUnitPrice(17.7, 17.58)).toEqual({ withinAutonomy: true, unitPrice: 17.7 });
-    expect(recommendedResponseUnitPrice(17.58, 17.58)).toEqual({ withinAutonomy: true, unitPrice: 17.58 });
+  it("answers an explicit ask below the margin with the agent's best price", () => {
+    expect(nextConcession({ ...base, lastOffered: 17.76, ask: 17.5 })).toEqual({ unitPrice: 17.58, basis: "floor", withinAutonomy: false });
   });
 
-  it("answers an ask below the margin with the agent's best price, not the ask", () => {
-    expect(recommendedResponseUnitPrice(17.5, 17.58)).toEqual({ withinAutonomy: false, unitPrice: 17.58 });
+  it("real case: matched the competitor's $17.75, customer asks for better → $17.65, then $17.58, then the owner", () => {
+    const first = nextConcession({ ...base, lastOffered: 17.75, ask: null });
+    expect(first).toEqual({ unitPrice: 17.65, basis: "step", withinAutonomy: true });
+    const second = nextConcession({ ...base, lastOffered: first.unitPrice, ask: null });
+    expect(second).toEqual({ unitPrice: 17.58, basis: "floor", withinAutonomy: true });
+    expect(nextConcession({ ...base, lastOffered: second.unitPrice, ask: null })).toEqual({ unitPrice: 17.58, basis: "at_floor", withinAutonomy: false });
+  });
+
+  it("improves list price in a real step when nothing was offered yet", () => {
+    expect(nextConcession({ ...base, lastOffered: null, ask: null })).toEqual({ unitPrice: 18, basis: "step", withinAutonomy: true });
   });
 });

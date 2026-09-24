@@ -84,17 +84,35 @@ export function autonomyFloorUnitPrice(unitPrice: number, autoMaxPct: number): n
   return Math.ceil((unitCents(unitPrice) * (100 - autoMaxPct)) / 100) / 100;
 }
 
+export type Concession = {
+  unitPrice: number;
+  /** ask: accept the customer's price · step: a small improvement · floor: the agent's best price · at_floor: only the owner can go lower. */
+  basis: "ask" | "step" | "floor" | "at_floor";
+  withinAutonomy: boolean;
+};
+
 /**
- * How to answer a price the customer asks for. Within the agent's margin the
- * ask is simply accepted: it is already a good price, so there is no reason
- * to counter or to give more. Below the margin the answer is the agent's
- * best price (the floor), never the ask at once; only if the customer
- * insists does the owner decide on the exact ask.
+ * The next price to offer, as in a real negotiation.
+ * - The customer named a price: within the margin it is simply accepted (it
+ *   is already a good price); below the margin the answer is the agent's best
+ *   price, and only if the customer insists does the owner decide.
+ * - The customer just asks for a better price: improve the last offer by
+ *   half the room left, rounded down to 5 cents ($17.75 → $17.65); when
+ *   little room is left, go to the floor ($17.58); at the floor, only the
+ *   owner can go lower. A competitor's price is a reference, never a floor.
  */
-export function recommendedResponseUnitPrice(ask: number, floor: number): { withinAutonomy: boolean; unitPrice: number } {
-  const askCents = Math.round(ask * 100);
-  const floorCents = Math.round(floor * 100);
-  return askCents >= floorCents
-    ? { withinAutonomy: true, unitPrice: askCents / 100 }
-    : { withinAutonomy: false, unitPrice: floorCents / 100 };
+export function nextConcession(args: { listUnitPrice: number; lastOffered: number | null; ask: number | null; floor: number }): Concession {
+  const floorCents = Math.round(args.floor * 100);
+  if (args.ask != null) {
+    const askCents = Math.round(args.ask * 100);
+    return askCents >= floorCents
+      ? { unitPrice: askCents / 100, basis: "ask", withinAutonomy: true }
+      : { unitPrice: floorCents / 100, basis: "floor", withinAutonomy: false };
+  }
+  const fromCents = Math.round((args.lastOffered ?? args.listUnitPrice) * 100);
+  if (fromCents <= floorCents) return { unitPrice: floorCents / 100, basis: "at_floor", withinAutonomy: false };
+  if (fromCents - floorCents <= 10) return { unitPrice: floorCents / 100, basis: "floor", withinAutonomy: true };
+  const halfway = Math.floor((floorCents + (fromCents - floorCents) / 2) / 5) * 5;
+  const step = Math.min(fromCents - 1, Math.max(floorCents, halfway));
+  return { unitPrice: step / 100, basis: step === floorCents ? "floor" : "step", withinAutonomy: true };
 }

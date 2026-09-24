@@ -75,7 +75,7 @@ export const saveCustomerInsightInput = z.object({
   objecion: z.string().nullable().optional().describe(`Formato "tipo: detalle". Tipos: ${OBJECTION_TYPES.join(", ")}.`),
   productoInteres: z.string().nullable().optional(),
   cantidad: z.number().int().nullable().optional(),
-  precioObjetivo: z.number().nullable().optional(),
+  precioObjetivo: z.number().nullable().optional().describe("Precio por unidad de referencia: el de su proveedor actual o el que pide."),
   condicionSolicitada: z.string().nullable().optional(),
   intencionCompra: z.string().nullable().optional(),
   resultado: z.string().nullable().optional().describe(`Uno de: ${INSIGHT_OUTCOMES.join(", ")}.`),

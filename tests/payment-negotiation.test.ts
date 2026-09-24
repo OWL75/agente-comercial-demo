@@ -420,3 +420,70 @@ describe("real conversation 2026-09-24 16:10 UTC: natural replies", () => {
     expect(sent).toContain("- Total: *$925.00*\n- Entrega: *24 horas*");
   });
 });
+
+describe("real conversation 2026-09-24 16:38 UTC: '¿No tienes un mejor precio?'", () => {
+  const MATCH_1775 = "Puedo igualarle ese precio: 50 unidades de Shampoo Professional 1L a $17.75 por unidad, total $887.50, con entrega al día siguiente y crédito a 30 días. ¿Me confirma el pedido?";
+
+  async function matchCompetitor() {
+    h.script = [
+      calls(
+        tool("save_customer_insight", { productoInteres: "Shampoo Professional 1L", cantidad: 50, precioObjetivo: 17.75, competidorMencionado: "Otro proveedor" }),
+        tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.75, deliveryHours: 24 }),
+      ),
+      say(MATCH_1775),
+    ];
+    await runAgentTurn(conversationId, "17.75");
+  }
+
+  it("the competitor's price is a reference, not a floor: it can offer $17.65 and the tool recommends it", async () => {
+    await matchCompetitor();
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.65, deliveryHours: 24 })),
+      say("Le puedo mejorar el precio a $17.65 por unidad, por debajo de lo que paga hoy: 50 unidades, total $882.50, con entrega al día siguiente y crédito a 30 días. ¿Me confirma el pedido?"),
+    ];
+    await runAgentTurn(conversationId, "No tienes un mejor precio?");
+    const offer = (await toolResults("prepare_verified_offer")).at(-1)!;
+    expect(offer).toMatchObject({
+      status: "ready", netUnitPrice: 17.65, total: 882.5,
+      negotiation: { referenceUnitPrice: 17.75, lastOfferedUnitPrice: 17.75, customerAskUnitPrice: null, recommendedUnitPrice: 17.65, recommendationBasis: "step" },
+    });
+    expect((await agentMessages()).at(-1)).toMatch(/\$17\.65 por unidad, por debajo de lo que paga hoy/);
+  });
+
+  it("if the customer asks again, the tool points to the best price ($17.58), and below that to the owner", async () => {
+    await matchCompetitor();
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.65, deliveryHours: 24 })),
+      say("Le puedo mejorar el precio a $17.65 por unidad: 50 unidades, total $882.50, con entrega al día siguiente. ¿Me confirma el pedido?"),
+    ];
+    await runAgentTurn(conversationId, "No tienes un mejor precio?");
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.58, deliveryHours: 24 })),
+      say("Mi mejor precio es $17.58 por unidad: 50 unidades, total $879.00, con entrega al día siguiente. ¿Me confirma el pedido?"),
+    ];
+    await runAgentTurn(conversationId, "Algo más?");
+    const [step2] = (await toolResults("prepare_verified_offer")).slice(-1);
+    expect(step2).toMatchObject({ status: "ready", netUnitPrice: 17.58, negotiation: { lastOfferedUnitPrice: 17.65, recommendedUnitPrice: 17.58, recommendationBasis: "floor" } });
+
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.5, deliveryHours: 24 })),
+      say("Ese precio tendría que consultarlo con Abdiel. ¿Quiere que lo consulte?"),
+    ];
+    await runAgentTurn(conversationId, "Déjamelo en menos");
+    expect((await toolResults("prepare_verified_offer")).at(-1)).toMatchObject({
+      status: "approval_required", reason: "below_autonomy_floor", negotiation: { recommendationBasis: "at_floor" },
+    });
+  });
+});
+
+describe("real conversation 2026-09-24 16:38 UTC: plain commercial language", () => {
+  it("rewrites 'para recuperar su pedido' / 'condiciones verificadas' before sending", async () => {
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.75, deliveryHours: 24 })),
+      say("Perfecto, puedo igualar esa condición para recuperar su pedido: 50 unidades a $17.75 por unidad, total $887.50. ¿Me confirma el pedido?"),
+      say("Perfecto, le igualo ese precio: 50 unidades a $17.75 por unidad, total $887.50, con entrega al día siguiente. ¿Me confirma el pedido?"),
+    ];
+    await runAgentTurn(conversationId, "17.75");
+    expect((await agentMessages()).at(-1)).toMatch(/^Perfecto, le igualo ese precio/);
+  });
+});

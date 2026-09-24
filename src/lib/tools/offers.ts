@@ -7,7 +7,7 @@ import {
   autonomyFloorUnitPrice,
   quoteByNetPrice,
   quoteMoney,
-  recommendedResponseUnitPrice,
+  nextConcession,
   smallestNaturalDiscount,
 } from "@/lib/policy/verified-offer";
 import { uuidLike } from "@/lib/zod-helpers";
@@ -22,7 +22,7 @@ export const prepareVerifiedOfferInput = z.object({
   netUnitPrice: z.number().positive().optional()
     .describe("Precio neto por unidad con máximo dos decimales, para negociar al centavo (por ejemplo 17.73). Usa discountPct o netUnitPrice, no ambos."),
   customerAskUnitPrice: z.number().positive().optional()
-    .describe("Último precio por unidad que pidió o mencionó el cliente, si lo hizo. La oferta nunca queda por debajo."),
+    .describe("Precio por unidad que el cliente pidió explícitamente (\"déjemelo a 17.70\"). No pases aquí el precio de su proveedor: esa es una referencia, no un piso."),
   deliveryHours: z.number().int().positive(),
 }).superRefine((input, ctx) => {
   if ((input.discountPct == null) === (input.netUnitPrice == null)) {
@@ -64,10 +64,13 @@ export type VerifiedOfferResult = {
     customerAskUnitPrice: number | null;
     lastOfferedUnitPrice: number | null;
     autonomyFloorUnitPrice: number;
-    /** The ask is within the agent's margin: accept it as is. */
+    /** Competitor price or target the customer mentioned (precio_objetivo). Informational. */
+    referenceUnitPrice: number | null;
+    /** The explicit ask is within the agent's margin: accept it as is. */
     askWithinAutonomy: boolean | null;
-    /** The price to answer with: the ask if within the margin, else the floor. */
+    /** The next price to offer (see nextConcession). */
     recommendedUnitPrice: number | null;
+    recommendationBasis: "ask" | "step" | "floor" | "at_floor";
   };
   roundingRule: "round_net_unit_to_cent_then_multiply";
 };
@@ -124,11 +127,11 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
     select precio_objetivo from agente_comercial.customer_insights
     where conversation_id = ${input.conversationId}
   `;
-  // The latest ask wins: a customer who moved from 17.75 to 17.70 asked for 17.70.
-  const target = input.customerAskUnitPrice ?? (insight?.precio_objetivo == null ? null : Number(insight.precio_objetivo));
-  const recommended = target == null || byPrice
-    ? null
-    : smallestNaturalDiscount(unitPrice, target, policy.config.discount.autoMaxPct);
+  // Only an explicit ask is a floor ("déjemelo a 17.70"). The competitor's
+  // price the customer mentioned is a reference: blocking every price below
+  // it left the agent saying "no puedo mejorarlo" with margin to spare.
+  const target = input.customerAskUnitPrice ?? null;
+  const reference = insight?.precio_objetivo == null ? null : Number(insight.precio_objetivo);
   const floor = autonomyFloorUnitPrice(unitPrice, policy.config.discount.autoMaxPct);
   const [lastPresented] = await sql<Array<{ net: string | null }>>`
     select payload->'offer'->>'netUnitPrice' as net from agente_comercial.audit_log
@@ -137,13 +140,21 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
     order by created_at desc limit 1
   `;
   const lastOffered = lastPresented?.net == null ? null : Number(lastPresented.net);
-  const response = target == null ? null : recommendedResponseUnitPrice(target, floor);
+  // Before any offer, a whole-percent discount must not overshoot what already
+  // reaches the reference price. Once an offer is on the table and the
+  // customer asks for more, conceding is the negotiation itself.
+  const recommended = reference == null || byPrice || lastOffered != null
+    ? null
+    : smallestNaturalDiscount(unitPrice, reference, policy.config.discount.autoMaxPct);
+  const concession = nextConcession({ listUnitPrice: unitPrice, lastOffered, ask: target, floor });
   const negotiation: NonNullable<VerifiedOfferResult["negotiation"]> = {
     customerAskUnitPrice: target,
+    referenceUnitPrice: reference,
     lastOfferedUnitPrice: lastOffered,
     autonomyFloorUnitPrice: floor,
-    askWithinAutonomy: response?.withinAutonomy ?? null,
-    recommendedUnitPrice: response?.unitPrice ?? null,
+    askWithinAutonomy: target == null ? null : concession.withinAutonomy,
+    recommendedUnitPrice: concession.unitPrice,
+    recommendationBasis: concession.basis,
   };
 
   const base: Omit<VerifiedOfferResult, "status" | "approvalsNeeded"> = {

@@ -22,7 +22,7 @@ import { loadFollowUpContext } from "@/lib/agent/follow-up-data";
 import { askOwner } from "@/lib/agent/owner-notify";
 import { resolveProductRefs } from "@/lib/tools/catalog";
 import { isRepetition } from "@/lib/agent/follow-up-context";
-import { asksForConfirmation, stripZeroDiscount } from "@/lib/agent/commercial-reply-guard";
+import { asksForConfirmation, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
 import { announceOrderToOwner, pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { formatDateEs } from "@/lib/payments/payment-messages";
 
@@ -283,6 +283,21 @@ async function executeAgentLoop(
       payload: { draft: reply },
     });
     input = input.concat(response.output, [{ role: "user", content: REPETITION_NOTE(opts.customerMessage ?? "") }]);
+    response = await untilText(await client.responses.create({ model, instructions, input, tools }));
+    if (!response) return "";
+    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
+    pendingApproval = await hasPendingApproval();
+    violations = violationsOf(reply);
+  }
+
+  // Internal process words ("recuperar su pedido", "condiciones verificadas")
+  // are not how a salesperson writes: one rewrite in plain commercial language.
+  if (opts.trigger === "customer_message" && usesInternalLanguage(reply)) {
+    await logAudit({ conversationId, category: "system", label: "Respuesta con lenguaje interno: el agente la reescribe", payload: { draft: reply } });
+    input = input.concat(response.output, [{
+      role: "user",
+      content: "(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta usa palabras internas (verificado, recuperar su pedido, reactivar). Escríbela como lo diría un vendedor, con las mismas condiciones y sin esas palabras.",
+    }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
     reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));

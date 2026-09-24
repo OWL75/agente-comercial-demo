@@ -89,3 +89,15 @@ Para producción:
 - **Demo.** En la conversación, el panel "Cobro y recordatorios de pago" muestra el vencimiento y los pasos. El botón "Simular que pasa el tiempo sin pago" envía el siguiente recordatorio al momento. El enlace "Abrir la página de pago" sirve para mostrar el pago en la presentación.
 - **Producción.** `/api/cron/payment-reminders` (POST, `Authorization: Bearer <CRON_SECRET>`) envía los recordatorios cuya fecha llegó, como máximo uno por pedido en cada ejecución. Está deshabilitado mientras no se defina `CRON_SECRET`; una tarea diaria de n8n puede llamarlo.
 - **Respuestas del cliente.** Si responde a un recordatorio ("necesito 15 días más"), el mensaje llega a la conversación. El agente lo consulta con el dueño con `consult_owner` o `request_approval`.
+
+## Ajuste v3: escalera de concesiones (conversación del 2026-09-24, 16:38 UTC)
+
+El cliente dijo que su proveedor le cobraba $17.75 y el agente igualó ese precio. Luego el cliente preguntó "¿No tienes un mejor precio?" y el agente respondió "Por debajo de $17.75 no puedo mejorarlo", aunque su margen llegaba hasta $17.58. La causa: el precio del competidor, guardado como `precio_objetivo`, se usaba como piso y bloqueaba cualquier oferta más baja.
+
+- **Solo un precio que el cliente pide explícitamente** ("déjemelo a 17.70", enviado como `customerAskUnitPrice`) actúa como piso. El precio del competidor queda como `referenceUnitPrice`, solo informativo.
+- **Si el cliente pide un mejor precio sin decir cuánto**, `negotiation.recommendedUnitPrice` indica el siguiente paso:
+  1. La mitad del margen que queda, redondeada hacia abajo a múltiplos de 5 centavos: de $17.75 a **$17.65**.
+  2. Si vuelve a pedir: el piso de **$17.58** (5 %).
+  3. Por debajo del piso (`at_floor`), la decisión es del dueño, con aprobación por Telegram.
+- **La regla del "descuento natural"**, que evita dar un porcentaje mayor al necesario para alcanzar la referencia, solo aplica antes de la primera oferta. Una vez hay una oferta presentada y el cliente pide más, ceder es parte de la negociación.
+- **Lenguaje interno.** Palabras como "recuperar su pedido" o "condiciones verificadas" hacen que la respuesta se reescriba una vez antes de enviarse.

@@ -4,7 +4,7 @@ import { sql } from "@/lib/db";
 import type { CommercialPolicyConfig } from "@/lib/db/policies";
 import { aggregateItems, moneyTotals, validateOrderConditions, type ScopedApproval } from "@/lib/policy/order-validation";
 import { uuidLike } from "@/lib/zod-helpers";
-import { quoteByNetPrice, smallestNaturalDiscount } from "@/lib/policy/verified-offer";
+import { quoteByNetPrice } from "@/lib/policy/verified-offer";
 
 export const createSandboxOrderInput = z.object({
   conversationId: uuidLike,
@@ -88,20 +88,8 @@ export async function createSandboxOrder(rawInput: CreateSandboxOrderInput) {
     if (byPrice && Math.abs(total - (offer.total ?? -1)) >= 0.005) {
       throw new Error("El total no coincide con la oferta presentada; vuelve a verificarla.");
     }
-    const [insight] = await tx<Array<{ precio_objetivo: string | null }>>`
-      select precio_objetivo from agente_comercial.customer_insights
-      where conversation_id = ${input.conversationId}
-    `;
-    if (!byPrice && insight?.precio_objetivo != null && lines.length === 1) {
-      const recommended = smallestNaturalDiscount(
-        lines[0].unitPrice,
-        Number(insight.precio_objetivo),
-        policy.config.discount.autoMaxPct,
-      );
-      if (recommended !== null && input.discountPct > recommended) {
-        throw new Error(`Existe un descuento natural menor (${recommended}%) que alcanza el precio objetivo; no se regalará margen.`);
-      }
-    }
+    // Margin rules were applied when the offer was verified; the order must
+    // match that presented offer exactly (checked above).
     // Latest request per type wins; never reuse an older approval after a rejection.
     const approvals = await tx<ScopedApproval[]>`
       select distinct on (type) type, status, requested_value, decided_value, context

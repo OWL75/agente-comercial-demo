@@ -148,3 +148,11 @@ export function guardedFallback(hasPendingApproval: boolean, ownerConsulted = fa
   }
   return "Déjame validar precio, descuento, disponibilidad y entrega antes de darte una oferta firme.";
 }
+
+// Words from the agent's own process that a salesperson would never write
+// to a customer ("para recuperar su pedido", "condiciones verificadas").
+const INTERNAL_LANGUAGE = /\b(verificad[ao]s?|recuperar(?:lo|la)?\s+(?:su|el|la|como)\s+(?:pedido|cliente|cuenta|compra)|recuperar\s+su\s+pedido|reactivar(?:lo|la)?)\b/i;
+
+export function usesInternalLanguage(text: string): boolean {
+  return INTERNAL_LANGUAGE.test(text);
+}
