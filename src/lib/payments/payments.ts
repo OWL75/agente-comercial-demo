@@ -5,20 +5,35 @@ import { logAudit } from "@/lib/agent/audit";
 import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
 import { askOwner, notifyOwner } from "@/lib/agent/owner-notify";
 import { todayInPanama } from "@/lib/agent/system-prompt";
-import { isWhatsAppConfigured, sendWhatsAppLinkButton, sendWhatsAppMessage } from "@/lib/channel/whatsapp-client";
+import { templateDeliveryMode } from "@/lib/agent/template-outreach";
+import {
+  isWhatsAppConfigured,
+  sendWhatsAppLinkButton,
+  sendWhatsAppMessage,
+  sendWhatsAppTemplate,
+} from "@/lib/channel/whatsapp-client";
+import {
+  TEMPLATE_LANGUAGE,
+  WHATSAPP_TEMPLATES,
+  renderTemplate,
+  type TemplateChoice,
+} from "@/lib/channel/whatsapp-templates";
 import {
   PAYMENT_BUTTON,
-  PAYMENT_FOOTER,
   PAYMENT_ISSUE_ACK,
   PAYMENT_METHODS,
   dueDateFor,
+  dueReminder,
   ownerOrderConfirmedText,
   ownerPaymentIssueQuestion,
+  ownerPaymentOverdueText,
   ownerPaymentReceivedText,
-  paymentReceivedText,
-  paymentRequestText,
+  paymentRequestTemplate,
+  paymentTemplate,
+  remindersFor,
   type PaymentMethod,
   type PaymentSummary,
+  type ReminderStep,
 } from "@/lib/payments/payment-messages";
 
 /**
@@ -30,12 +45,18 @@ import {
  * the same shape with a payment-link provider (e.g. Tilopay or Yappy's
  * payment button) whose paid-webhook calls markPaymentReceived.
  *
+ * Every customer message is a payment template of the catalog (UTILITY):
+ * in "meta" mode the approved template goes out with the token as its URL
+ * button suffix; otherwise (demo) the same copy goes out inside the 24 h
+ * window as a "Pagar pedido" link button.
+ *
  * State lives in orders.status (sandbox_created → pendiente_pago → pagado)
  * and audit_log payloads, so no schema change is needed.
  */
 
 export const LINK_CREATED = "Enlace de pago creado";
 const ISSUE_REPORTED = "Problema de pago reportado";
+const REMINDER_SENT = "Recordatorio de pago enviado";
 
 export function publicBaseUrl(): string | null {
   const explicit = process.env.PUBLIC_BASE_URL?.trim();
@@ -94,14 +115,16 @@ async function orderSummary(orderId: string, dueDate: string) {
   };
 }
 
-/** Stores the message in the conversation and sends it on WhatsApp (best effort, like every agent send). */
-async function tellCustomer(
-  target: { conversationId: string; customerId: string; customerPhone: string | null },
-  text: string,
-  link?: { url: string },
-): Promise<void> {
+type Recipient = { conversationId: string; customerId: string; customerPhone: string | null };
+
+/**
+ * Stores the message in the conversation and sends it on WhatsApp (best
+ * effort, like every agent send). The panel shows the link as text; on
+ * WhatsApp it is the template's "Pagar pedido" button.
+ */
+async function tellCustomer(target: Recipient, message: TemplateChoice | { text: string }, link?: { token: string; url: string }) {
   if (await isCustomerSuppressed(target.customerId)) return;
-  // The panel shows the link as text; on WhatsApp it is a "Pagar pedido" button.
+  const text = "text" in message ? message.text : renderTemplate(message.name, message.params);
   const stored = link ? `${text}\n\n${PAYMENT_BUTTON}: ${link.url}` : text;
   await sql`
     insert into agente_comercial.messages (conversation_id, direction, sender, body)
@@ -109,8 +132,14 @@ async function tellCustomer(
   `;
   if (!isWhatsAppConfigured() || !target.customerPhone) return;
   try {
-    if (link) await sendWhatsAppLinkButton(target.customerPhone, text, PAYMENT_BUTTON, link.url, PAYMENT_FOOTER);
-    else await sendWhatsAppMessage(target.customerPhone, text);
+    if ("name" in message && templateDeliveryMode() === "meta") {
+      await sendWhatsAppTemplate(target.customerPhone, message.name, TEMPLATE_LANGUAGE, message.params, link?.token);
+    } else if (link) {
+      const footer = "name" in message ? WHATSAPP_TEMPLATES[message.name].footer ?? undefined : undefined;
+      await sendWhatsAppLinkButton(target.customerPhone, text, PAYMENT_BUTTON, link.url, footer);
+    } else {
+      await sendWhatsAppMessage(target.customerPhone, text);
+    }
   } catch (err) {
     await logAudit({
       conversationId: target.conversationId,
@@ -145,9 +174,13 @@ async function linkFor(orderId: string): Promise<{ token: string; dueDate: strin
   return row ? { token: row.token, dueDate: row.due_date } : null;
 }
 
+function paymentUrl(token: string): string | null {
+  const base = publicBaseUrl();
+  return base ? `${base}/pagar/${token}` : null;
+}
+
 /** Called right after the order is created: one payment link per order, sent as its own message. */
 export async function sendPaymentRequest(orderId: string): Promise<string | null> {
-  const base = publicBaseUrl();
   let link = await linkFor(orderId);
   if (!link) {
     const pending = await orderSummary(orderId, todayInPanama());
@@ -163,12 +196,12 @@ export async function sendPaymentRequest(orderId: string): Promise<string | null
     link = { token, dueDate };
   }
   const order = await orderSummary(orderId, link.dueDate);
-  if (!base) {
+  const url = paymentUrl(link.token);
+  if (!url) {
     await logAudit({ conversationId: order.conversationId, category: "system", label: "Enlace de pago sin URL pública configurada (PUBLIC_BASE_URL)." });
     return null;
   }
-  const url = `${base}/pagar/${link.token}`;
-  await tellCustomer(order, paymentRequestText(order.summary), { url });
+  await tellCustomer(order, paymentRequestTemplate(order.summary), { token: link.token, url });
   return url;
 }
 
@@ -195,7 +228,7 @@ export async function markPaymentReceived(token: string, method: PaymentMethod):
     label: `Pago recibido (${label}): $${payment.total}`,
     payload: { paymentToken: token, orderId: payment.orderId, method, amount: payment.total, simulated: true },
   });
-  await tellCustomer(payment, paymentReceivedText(payment, label));
+  await tellCustomer(payment, paymentTemplate("pago_recibido", payment));
   await notifyOwner(payment.conversationId, ownerPaymentReceivedText(payment, label));
   return { alreadyPaid: false };
 }
@@ -213,7 +246,7 @@ export async function reportPaymentIssue(token: string, issue: string): Promise<
     payload: { paymentToken: token, orderId: payment.orderId, issue: text },
   });
   await askOwner(payment.conversationId, ownerPaymentIssueQuestion(payment, text));
-  await tellCustomer(payment, PAYMENT_ISSUE_ACK);
+  await tellCustomer(payment, { text: PAYMENT_ISSUE_ACK });
 }
 
 /** For a conversation whose order is created but unpaid: what the agent should know. */
@@ -224,4 +257,91 @@ export async function pendingPaymentFor(conversationId: string): Promise<Payment
   if (!row) return null;
   const link = await linkFor(row.id);
   return link ? findPayment(link.token) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Due-date reminders
+// ---------------------------------------------------------------------------
+
+async function sentReminderCount(token: string): Promise<number> {
+  const [row] = await sql<Array<{ count: number }>>`
+    select count(*)::int as count from agente_comercial.audit_log
+    where label like ${REMINDER_SENT + "%"} and payload->>'paymentToken' = ${token}
+  `;
+  return Number(row?.count ?? 0);
+}
+
+async function sendPaymentReminder(payment: PaymentView, step: ReminderStep, simulated: boolean): Promise<void> {
+  const url = paymentUrl(payment.token);
+  await tellCustomer(payment, paymentTemplate(step.template, payment), url ? { token: payment.token, url } : undefined);
+  await logAudit({
+    conversationId: payment.conversationId,
+    category: "system",
+    label: `${REMINDER_SENT}: ${step.step} de ${remindersFor(payment.terms).length} — ${step.title}${simulated ? ` (simulado; en producción: ${step.productionTiming})` : ""}`,
+    payload: { paymentToken: payment.token, orderId: payment.orderId, reminderStep: step.step, template: step.template, simulated },
+  });
+  if (step.notifyOwner) await notifyOwner(payment.conversationId, ownerPaymentOverdueText(payment));
+}
+
+export type PaymentReminderState = {
+  dueDate: string;
+  total: number;
+  token: string;
+  steps: readonly ReminderStep[];
+  sentCount: number;
+  canSimulate: boolean;
+  blockedReason: string | null;
+};
+
+/** What the demo panel shows for a conversation with an order; null when there is no payment link. */
+export async function getPaymentReminderState(conversationId: string): Promise<PaymentReminderState | null> {
+  const [order] = await sql<Array<{ id: string }>>`
+    select id from agente_comercial.orders where conversation_id = ${conversationId} limit 1
+  `;
+  if (!order) return null;
+  const link = await linkFor(order.id);
+  const payment = link ? await findPayment(link.token) : null;
+  if (!payment) return null;
+  const steps = remindersFor(payment.terms);
+  const sentCount = await sentReminderCount(payment.token);
+  const blockedReason = payment.status === "pagado"
+    ? "El cliente ya pagó: no se envían más recordatorios."
+    : (await isCustomerSuppressed(payment.customerId))
+      ? "El cliente pidió no recibir más mensajes."
+      : sentCount >= steps.length
+        ? "Ya se enviaron todos los recordatorios; el caso queda en manos del dueño."
+        : null;
+  return { dueDate: payment.dueDate, total: payment.total, token: payment.token, steps, sentCount, canSimulate: blockedReason === null, blockedReason };
+}
+
+/** Demo control: pretends time passed without payment and sends the next reminder now. */
+export async function simulateNextPaymentReminder(conversationId: string): Promise<void> {
+  const state = await getPaymentReminderState(conversationId);
+  if (!state?.canSimulate) return;
+  const payment = await findPayment(state.token);
+  if (!payment) return;
+  await sendPaymentReminder(payment, state.steps[state.sentCount], true);
+}
+
+/**
+ * Production runner (a daily job calls it): sends every reminder whose date
+ * arrived, at most one per order per run, never for paid or opted-out orders.
+ */
+export async function runDuePaymentReminders(today: string = todayInPanama()): Promise<number> {
+  const pending = await sql<Array<{ token: string }>>`
+    select a.payload->>'paymentToken' as token
+    from agente_comercial.orders o
+    join agente_comercial.audit_log a on a.label = ${LINK_CREATED} and a.payload->>'orderId' = o.id::text
+    where o.status = 'pendiente_pago'
+  `;
+  let sent = 0;
+  for (const { token } of pending) {
+    const payment = await findPayment(token);
+    if (!payment || payment.status !== "pendiente_pago" || (await isCustomerSuppressed(payment.customerId))) continue;
+    const step = dueReminder(payment.terms, payment.dueDate, await sentReminderCount(token), today);
+    if (!step) continue;
+    await sendPaymentReminder(payment, step, false);
+    sent++;
+  }
+  return sent;
 }

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { runAgentTurn } from "@/lib/agent/runtime";
 import { simulateCustomerSilence } from "@/lib/agent/follow-up";
+import { simulateNextPaymentReminder } from "@/lib/payments/payments";
 import { requireDemoSession } from "@/lib/security/session";
 import { uuidLike } from "@/lib/zod-helpers";
 
@@ -21,5 +22,12 @@ export async function simulateNoReplyAction(conversationId: string) {
   await requireDemoSession();
   uuidLike.parse(conversationId);
   await simulateCustomerSilence(conversationId);
+  revalidatePath(`/conversaciones/${conversationId}`);
+}
+
+export async function simulatePaymentReminderAction(conversationId: string) {
+  await requireDemoSession();
+  uuidLike.parse(conversationId);
+  await simulateNextPaymentReminder(conversationId);
   revalidatePath(`/conversaciones/${conversationId}`);
 }

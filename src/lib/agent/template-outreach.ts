@@ -220,7 +220,7 @@ export async function sendTemplateMessage(conversationId: string, choice: Templa
       // provider's real 24 h session is still open. Meta remains authoritative.
       // Inside the session the template's quick replies become reply buttons.
       const template = WHATSAPP_TEMPLATES[choice.name];
-      await sendWhatsAppButtons(target.customerPhone, text, template.buttons, template.footer);
+      await sendWhatsAppButtons(target.customerPhone, text, template.buttons, template.footer ?? undefined);
     } else if (mode === "meta") {
       await sendWhatsAppTemplate(target.customerPhone, choice.name, TEMPLATE_LANGUAGE, choice.params);
     } else {

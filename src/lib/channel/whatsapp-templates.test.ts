@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   FOLLOW_UP_TEMPLATES,
   OPT_OUT_FOOTER,
+  PAYMENT_LINK_BUTTON,
   SENDER_NAME,
   WHATSAPP_TEMPLATES,
   countPlaceholders,
@@ -13,6 +14,8 @@ import {
 } from "@/lib/channel/whatsapp-templates";
 
 const templates = Object.values(WHATSAPP_TEMPLATES);
+const outreach = templates.filter((t) => t.category === "MARKETING");
+const payment = templates.filter((t) => t.category === "UTILITY");
 
 describe("templates satisfy Meta's creation rules", () => {
   it.each(templates.map((t) => [t.name, t] as const))("%s", (_name, t) => {
@@ -26,16 +29,20 @@ describe("templates satisfy Meta's creation rules", () => {
     expect(t.body.length).toBeLessThanOrEqual(1024);
     expect(t.name).toMatch(/^[a-z0-9_]+$/);
     // Quick replies: at most 3 so demo mode can send them as reply buttons, 20 chars each.
-    expect(t.buttons.length).toBeGreaterThan(0);
     expect(t.buttons.length).toBeLessThanOrEqual(3);
+    if (t.linkButton) {
+      expect(t.linkButton.text.length).toBeLessThanOrEqual(20);
+      expect(t.buttons).toEqual([]);
+    }
     for (const button of t.buttons) expect(button.length).toBeLessThanOrEqual(20);
-    expect(t.footer.length).toBeLessThanOrEqual(60);
-    expect(t.footer).not.toMatch(/\{\{/);
+    expect((t.footer ?? "").length).toBeLessThanOrEqual(60);
+    expect(t.footer ?? "").not.toMatch(/\{\{/);
   });
 });
 
-describe("templates follow the commercial style", () => {
-  it.each(templates.map((t) => [t.name, t] as const))("%s", (_name, t) => {
+describe("outreach templates follow the commercial style", () => {
+  it.each(outreach.map((t) => [t.name, t] as const))("%s", (_name, t) => {
+    expect(t.buttons.length).toBeGreaterThan(0);
     // Formal treatment: no "tú" forms.
     expect(t.body).not.toMatch(/\b(te|tu|tus|tienes|necesitas|quieres|dime)\b/i);
     // One important question per message.
@@ -50,6 +57,20 @@ describe("templates follow the commercial style", () => {
       expect(WHATSAPP_TEMPLATES[name].body).toContain(`le escribe ${SENDER_NAME} de Nova Distribution`);
       expect(WHATSAPP_TEMPLATES[name].params[0].label).toBe("Empresa");
     }
+  });
+
+  it("payment templates are UTILITY: about the customer's own order, in usted, with the payment button and no promotion", () => {
+    expect(payment.map((t) => t.name)).toEqual([
+      "cobro_credito", "cobro_contado", "recordatorio_pago", "pago_vence_hoy", "pago_vencido", "pago_recibido",
+    ]);
+    for (const t of payment) {
+      expect(t.body).toMatch(/pedido #\{\{\d\}\}/);
+      expect(t.body).not.toMatch(/\b(te|tu|tus|puedes|dime)\b/i);
+      expect(t.body).not.toMatch(/descuento|oferta|promoci[oó]n|aprovech/i);
+      expect(t.body.replace(/\{\{\d+\}\}/g, "X").length).toBeLessThanOrEqual(220);
+      if (t.name !== "pago_recibido") expect(t.linkButton).toEqual(PAYMENT_LINK_BUTTON);
+    }
+    expect(WHATSAPP_TEMPLATES.pago_recibido.linkButton).toBeUndefined();
   });
 
   it("no longer has the empty 'retomo mi mensaje' reminder", () => {

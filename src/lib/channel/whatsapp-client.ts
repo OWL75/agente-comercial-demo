@@ -85,18 +85,19 @@ export async function sendWhatsAppTemplate(
   name: string,
   languageCode: string,
   bodyParams: string[],
+  /** Dynamic suffix of the template's URL button (the payment token). */
+  urlButtonSuffix?: string,
 ): Promise<{ messageId: string | null }> {
+  const components: Record<string, unknown>[] = [];
+  if (bodyParams.length) components.push({ type: "body", parameters: bodyParams.map((text) => ({ type: "text", text })) });
+  if (urlButtonSuffix) {
+    components.push({ type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: urlButtonSuffix }] });
+  }
   return postMessage({
     messaging_product: "whatsapp",
     to: toPhone.replace(/\D/g, ""),
     type: "template",
-    template: {
-      name,
-      language: { code: languageCode },
-      components: bodyParams.length
-        ? [{ type: "body", parameters: bodyParams.map((text) => ({ type: "text", text })) }]
-        : [],
-    },
+    template: { name, language: { code: languageCode }, components },
   });
 }
 

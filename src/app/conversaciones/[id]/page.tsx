@@ -15,7 +15,10 @@ import { OrderConfirmedCard } from "@/components/order-confirmed-card";
 import { FollowUpPanel } from "@/components/follow-up-panel";
 import { getFollowUpState } from "@/lib/agent/follow-up";
 import { FOLLOW_UP_STEPS } from "@/lib/agent/follow-up-sequence";
-import { sendMessageAction, simulateNoReplyAction } from "./actions";
+import { PaymentReminderPanel } from "@/components/payment-reminder-panel";
+import { getPaymentReminderState } from "@/lib/payments/payments";
+import { formatDateEs, money } from "@/lib/payments/payment-messages";
+import { sendMessageAction, simulateNoReplyAction, simulatePaymentReminderAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -63,17 +66,19 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
   const context = await getConversationContext(id);
   if (!context) notFound();
 
-  const [messages, activity, frequentProducts, order, followUp] = await Promise.all([
+  const [messages, activity, frequentProducts, order, followUp, payment] = await Promise.all([
     getConversationMessages(id),
     getAgentActivity(id),
     getFrequentProducts(context.customerId),
     getOrderForConversation(id),
     getFollowUpState(id),
+    getPaymentReminderState(id),
   ]);
 
   const closingStats = order ? await getConversationClosingStats(id) : null;
   const boundSendMessage = sendMessageAction.bind(null, id);
   const boundSimulateNoReply = simulateNoReplyAction.bind(null, id);
+  const boundSimulatePaymentReminder = simulatePaymentReminderAction.bind(null, id);
 
   return (
     <main className="mx-auto flex h-screen max-w-7xl flex-col px-6 py-6">
@@ -134,15 +139,30 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
         </Panel>
 
         <div className="flex flex-col gap-4 overflow-hidden">
-        <Panel title="Seguimiento si el cliente no responde" className="shrink-0">
-          <FollowUpPanel
-            steps={FOLLOW_UP_STEPS}
-            sentCount={followUp.sentCount}
-            canSimulate={followUp.canSimulate}
-            blockedReason={followUp.blockedReason}
-            action={boundSimulateNoReply}
-          />
-        </Panel>
+        {payment ? (
+          <Panel title="Cobro y recordatorios de pago" className="shrink-0">
+            <PaymentReminderPanel
+              steps={payment.steps}
+              sentCount={payment.sentCount}
+              canSimulate={payment.canSimulate}
+              blockedReason={payment.blockedReason}
+              dueDateLabel={formatDateEs(payment.dueDate)}
+              totalLabel={money(payment.total)}
+              paymentHref={`/pagar/${payment.token}`}
+              action={boundSimulatePaymentReminder}
+            />
+          </Panel>
+        ) : (
+          <Panel title="Seguimiento si el cliente no responde" className="shrink-0">
+            <FollowUpPanel
+              steps={FOLLOW_UP_STEPS}
+              sentCount={followUp.sentCount}
+              canSimulate={followUp.canSimulate}
+              blockedReason={followUp.blockedReason}
+              action={boundSimulateNoReply}
+            />
+          </Panel>
+        )}
 
         <Panel title="Actividad del agente" className="min-h-0 flex-1">
           {activity.length === 0 ? (

@@ -6,7 +6,7 @@
 
 export const TEMPLATE_LANGUAGE = "es";
 
-export type TemplateName =
+export type OutreachTemplateName =
   | "apertura_recompra"
   | "apertura_reactivacion"
   | "apertura_producto"
@@ -14,16 +14,35 @@ export type TemplateName =
   | "seguimiento_angulo"
   | "seguimiento_cierre";
 
+export type PaymentTemplateName =
+  | "cobro_credito"
+  | "cobro_contado"
+  | "recordatorio_pago"
+  | "pago_vence_hoy"
+  | "pago_vencido"
+  | "pago_recibido";
+
+export type TemplateName = OutreachTemplateName | PaymentTemplateName;
+
 export type WhatsAppTemplate = {
   name: TemplateName;
-  category: "MARKETING";
+  /** MARKETING: outreach. UTILITY: about an order the customer placed (no promotion). */
+  category: "MARKETING" | "UTILITY";
   purpose: string;
   body: string;
   params: readonly { label: string; example: string }[];
   /** Quick replies (max 3, 20 characters each): one tap is easier than typing. */
   buttons: readonly string[];
-  footer: string;
+  /** URL button whose dynamic suffix is the payment token: <base>/pagar/{{1}}. */
+  linkButton?: { text: string; pathPrefix: string; example: string };
+  footer: string | null;
 };
+
+/** Invites any payment exception into the chat, where the agent routes it to the owner. */
+export const PAYMENT_FOOTER = "Si necesita pagar de otra forma, respóndame aquí.";
+
+/** Label and path of the payment button shared by every payment template. */
+export const PAYMENT_LINK_BUTTON = { text: "Pagar pedido", pathPrefix: "/pagar/", example: "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6" } as const;
 
 /** Who signs the outreach. Written on his behalf; he decides exceptions on Telegram. */
 export const SENDER_NAME = "Abdiel";
@@ -33,7 +52,7 @@ export const OPT_OUT_FOOTER = "Si no desea más mensajes, responda BAJA.";
 
 // Provisional variants without the contact's first name (not stored yet):
 // they greet with "Hola," and name the company inside the sentence.
-export const WHATSAPP_TEMPLATES: Record<TemplateName, WhatsAppTemplate> = {
+const OUTREACH_TEMPLATES: Record<OutreachTemplateName, WhatsAppTemplate> = {
   apertura_recompra: {
     name: "apertura_recompra",
     category: "MARKETING",
@@ -103,6 +122,98 @@ export const WHATSAPP_TEMPLATES: Record<TemplateName, WhatsAppTemplate> = {
     footer: OPT_OUT_FOOTER,
   },
 };
+
+// Payment templates: UTILITY, because each one is about an order the
+// customer placed and confirmed, with no promotion. Utility templates are
+// cheaper and do not count against Meta's per-user marketing limit. Their
+// only button opens the order's payment link.
+const PAYMENT_TEMPLATES: Record<PaymentTemplateName, WhatsAppTemplate> = {
+  cobro_credito: {
+    name: "cobro_credito",
+    category: "UTILITY",
+    purpose: "Cobro al confirmar un pedido a crédito: plazo, vencimiento y enlace para pagar cuando convenga.",
+    body: "Su pedido #{{1}} de {{2}} quedó registrado con crédito a {{3}}, con vencimiento el {{4}}. Puede pagarlo aquí cuando le convenga, con tarjeta, Yappy o transferencia.",
+    params: [
+      { label: "Pedido", example: "A1B2C3D4" },
+      { label: "Total", example: "$885.00" },
+      { label: "Plazo", example: "30 días" },
+      { label: "Vencimiento", example: "24 de octubre de 2026" },
+    ],
+    buttons: [],
+    linkButton: PAYMENT_LINK_BUTTON,
+    footer: PAYMENT_FOOTER,
+  },
+  cobro_contado: {
+    name: "cobro_contado",
+    category: "UTILITY",
+    purpose: "Cobro al confirmar un pedido al contado: el despacho se coordina al acreditarse el pago.",
+    body: "Para completar su pedido #{{1}} de {{2}}, puede pagarlo aquí con tarjeta, Yappy o transferencia. En cuanto se acredite el pago coordinamos el despacho.",
+    params: [
+      { label: "Pedido", example: "A1B2C3D4" },
+      { label: "Total", example: "$885.00" },
+    ],
+    buttons: [],
+    linkButton: PAYMENT_LINK_BUTTON,
+    footer: PAYMENT_FOOTER,
+  },
+  recordatorio_pago: {
+    name: "recordatorio_pago",
+    category: "UTILITY",
+    purpose: "Recordatorio 1: tres días antes del vencimiento.",
+    body: "Hola, le recordamos que el pago de su pedido #{{1}} por {{2}} vence el {{3}}. Puede pagarlo aquí cuando le convenga. Si ya lo realizó, puede ignorar este mensaje.",
+    params: [
+      { label: "Pedido", example: "A1B2C3D4" },
+      { label: "Total", example: "$885.00" },
+      { label: "Vencimiento", example: "24 de octubre de 2026" },
+    ],
+    buttons: [],
+    linkButton: PAYMENT_LINK_BUTTON,
+    footer: PAYMENT_FOOTER,
+  },
+  pago_vence_hoy: {
+    name: "pago_vence_hoy",
+    category: "UTILITY",
+    purpose: "Recordatorio 2: el día del vencimiento.",
+    body: "Hola, hoy vence el pago de su pedido #{{1}} por {{2}}. Puede pagarlo aquí en un minuto con tarjeta, Yappy o transferencia. Si ya lo realizó, puede ignorar este mensaje.",
+    params: [
+      { label: "Pedido", example: "A1B2C3D4" },
+      { label: "Total", example: "$885.00" },
+    ],
+    buttons: [],
+    linkButton: PAYMENT_LINK_BUTTON,
+    footer: PAYMENT_FOOTER,
+  },
+  pago_vencido: {
+    name: "pago_vencido",
+    category: "UTILITY",
+    purpose: "Recordatorio 3: tres días después del vencimiento; también avisa al dueño.",
+    body: "Hola, el pago de su pedido #{{1}} por {{2}} venció el {{3}}. Si ya lo realizó o necesita un plazo adicional, respóndame aquí y lo revisamos con gusto.",
+    params: [
+      { label: "Pedido", example: "A1B2C3D4" },
+      { label: "Total", example: "$885.00" },
+      { label: "Vencimiento", example: "24 de octubre de 2026" },
+    ],
+    buttons: [],
+    linkButton: PAYMENT_LINK_BUTTON,
+    footer: null,
+  },
+  pago_recibido: {
+    name: "pago_recibido",
+    category: "UTILITY",
+    purpose: "Confirmación de pago recibido.",
+    body: "Recibimos su pago de {{1}} del pedido #{{2}}. ¡Muchas gracias! Coordinamos la entrega de {{3}} unidades de {{4}}.",
+    params: [
+      { label: "Total", example: "$885.00" },
+      { label: "Pedido", example: "A1B2C3D4" },
+      { label: "Cantidad", example: "50" },
+      { label: "Producto", example: "Shampoo Professional 1L" },
+    ],
+    buttons: [],
+    footer: null,
+  },
+};
+
+export const WHATSAPP_TEMPLATES: Record<TemplateName, WhatsAppTemplate> = { ...OUTREACH_TEMPLATES, ...PAYMENT_TEMPLATES };
 
 /** Default order when the customer never replied; the choice adapts to the conversation otherwise. */
 export const FOLLOW_UP_TEMPLATES: Record<number, TemplateName> = {

@@ -30,7 +30,7 @@ Todavía no se guarda el nombre de la persona de contacto: `customers.name` es l
 
 ## Catálogo para registrar en WhatsApp Manager
 
-Todas las plantillas llevan:
+Las plantillas de contacto (apertura y seguimiento) llevan:
 - categoría **Marketing** (Meta reclasifica a Marketing lo que se presente como Utilidad);
 - idioma **Español (`es`)**;
 - sin encabezado;
@@ -108,3 +108,27 @@ Comparar por segmento (recompra atrasada, reactivación, competencia):
 Cambiar una sola variable a la vez (por ejemplo, con y sin botones, o con y sin el nombre del asesor) y usar grupos comparables. Hay que vigilar el error 131049 (límite por usuario): si aparece a menudo, conviene espaciar más los toques.
 
 Para prospectos sin relación previa ni consentimiento, es mejor que la conversación la inicien ellos (enlace o código QR de WhatsApp, anuncios que abren el chat). Así el agente responde dentro de la ventana de servicio sin plantillas de marketing.
+
+## Plantillas de cobro (Utilidad)
+
+Estas plantillas se refieren a un pedido que el cliente hizo y confirmó, sin ninguna promoción; por eso van en la categoría **Utilidad**. Son más baratas que las de Marketing y no cuentan en el límite de marketing que Meta aplica a cada persona. Todavía no se han enviado a aprobación: en la demo se muestra el mismo texto como mensaje con botón dentro de la ventana de 24 h. Con `WHATSAPP_TEMPLATE_MODE=meta` se envía la plantilla aprobada, con el token del pago como sufijo del botón.
+
+Todas se registran con idioma **Español (`es`)**, sin encabezado. Las que llevan enlace tienen un botón de **URL dinámica** con el texto `Pagar pedido` y la URL `<dominio>/pagar/{{1}}` (ejemplo del sufijo: `a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6`).
+
+| Plantilla | Cuándo | Pie |
+|---|---|---|
+| `cobro_credito` | Al confirmar un pedido a crédito | Si necesita pagar de otra forma, respóndame aquí. |
+| `cobro_contado` | Al confirmar un pedido al contado | Igual |
+| `recordatorio_pago` | 3 días antes del vencimiento | Igual |
+| `pago_vence_hoy` | El día del vencimiento | Igual |
+| `pago_vencido` | 3 días después del vencimiento; en contado, 2 días después del pedido. Avisa al dueño por Telegram. | — |
+| `pago_recibido` | Al acreditarse el pago (sin botón) | — |
+
+```text
+cobro_credito:     Su pedido #{{1}} de {{2}} quedó registrado con crédito a {{3}}, con vencimiento el {{4}}. Puede pagarlo aquí cuando le convenga, con tarjeta, Yappy o transferencia.
+cobro_contado:     Para completar su pedido #{{1}} de {{2}}, puede pagarlo aquí con tarjeta, Yappy o transferencia. En cuanto se acredite el pago coordinamos el despacho.
+recordatorio_pago: Hola, le recordamos que el pago de su pedido #{{1}} por {{2}} vence el {{3}}. Puede pagarlo aquí cuando le convenga. Si ya lo realizó, puede ignorar este mensaje.
+pago_vence_hoy:    Hola, hoy vence el pago de su pedido #{{1}} por {{2}}. Puede pagarlo aquí en un minuto con tarjeta, Yappy o transferencia. Si ya lo realizó, puede ignorar este mensaje.
+pago_vencido:      Hola, el pago de su pedido #{{1}} por {{2}} venció el {{3}}. Si ya lo realizó o necesita un plazo adicional, respóndame aquí y lo revisamos con gusto.
+pago_recibido:     Recibimos su pago de {{1}} del pedido #{{2}}. ¡Muchas gracias! Coordinamos la entrega de {{3}} unidades de {{4}}.
+```

@@ -80,3 +80,12 @@ Para producción:
 - **Si el precio que pide el cliente está dentro del margen del agente** (hasta 5 %, es decir, $17.58 o más para CAP-001), el agente lo acepta tal cual: "Perfecto, se lo dejo en $17.70" y pide la confirmación. No hace contraoferta y no baja más. Esto reemplaza la contraoferta a mitad de camino ($17.73) de la versión anterior.
 - **Si el precio que pide está por debajo del margen** (por ejemplo, $17.50), el agente no lo acepta de inmediato. Primero ofrece su mejor precio de forma profesional: "Le puedo rebajar un 5 %, quedaría en $17.58". Si el cliente insiste, `prepare_verified_offer` devuelve `approval_required` con `below_autonomy_floor`. El agente pide aprobación del precio exacto ($17.50 = 5.4054 %) y al dueño le llega por Telegram "$18.50 → $17.50 c/u · total $875.00". Si el dueño aprueba, el agente se lo ofrece al cliente y cierra.
 - `negotiation` devuelve `askWithinAutonomy` y `recommendedUnitPrice`: el precio pedido si está dentro del margen, o el piso si no lo está.
+
+## Recordatorios de vencimiento
+
+- **Pedidos a crédito.** Se envían `recordatorio_pago` 3 días antes del vencimiento, `pago_vence_hoy` el mismo día y `pago_vencido` 3 días después. El último también avisa al dueño por Telegram con "⚠️ Pago vencido".
+- **Pedidos al contado.** Se envía un solo `pago_vencido`, 2 días después del pedido.
+- **Cuándo se detienen.** Al pagar o al registrarse un opt-out. Cada recordatorio se envía una sola vez.
+- **Demo.** En la conversación, el panel "Cobro y recordatorios de pago" muestra el vencimiento y los pasos. El botón "Simular que pasa el tiempo sin pago" envía el siguiente recordatorio al momento. El enlace "Abrir la página de pago" sirve para mostrar el pago en la presentación.
+- **Producción.** `/api/cron/payment-reminders` (POST, `Authorization: Bearer <CRON_SECRET>`) envía los recordatorios cuya fecha llegó, como máximo uno por pedido en cada ejecución. Está deshabilitado mientras no se defina `CRON_SECRET`; una tarea diaria de n8n puede llamarlo.
+- **Respuestas del cliente.** Si responde a un recordatorio ("necesito 15 días más"), el mensaje llega a la conversación. El agente lo consulta con el dueño con `consult_owner` o `request_approval`.

@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
   telegram: [] as Array<{ text: string; markup?: Record<string, unknown>; messageId: number }>,
   nextMessageId: 500,
   callId: 0,
+  whatsappOn: false,
+  whatsapp: [] as Array<{ kind: string; args: unknown[] }>,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -27,9 +29,10 @@ vi.mock("@/lib/db", async () => {
   return { sql, toJsonb: sql.json };
 });
 vi.mock("@/lib/channel/whatsapp-client", () => ({
-  isWhatsAppConfigured: () => false,
-  sendWhatsAppMessage: async () => ({ messageId: null }),
-  sendWhatsAppLinkButton: async () => ({ messageId: null }),
+  isWhatsAppConfigured: () => h.whatsappOn,
+  sendWhatsAppMessage: async (...args: unknown[]) => { h.whatsapp.push({ kind: "text", args }); return { messageId: null }; },
+  sendWhatsAppLinkButton: async (...args: unknown[]) => { h.whatsapp.push({ kind: "link", args }); return { messageId: null }; },
+  sendWhatsAppTemplate: async (...args: unknown[]) => { h.whatsapp.push({ kind: "template", args }); return { messageId: null }; },
 }));
 vi.mock("@/lib/channel/telegram-client", () => ({
   isTelegramConfigured: () => true,
@@ -62,7 +65,17 @@ vi.mock("@/lib/agent/openai-client", () => ({
 import { database } from "./sql-harness";
 import { runAgentTurn } from "@/lib/agent/runtime";
 import { handleTelegramUpdate } from "@/lib/agent/owner-telegram";
-import { findPayment, markPaymentReceived, publicBaseUrl, reportPaymentIssue } from "@/lib/payments/payments";
+import {
+  findPayment,
+  getPaymentReminderState,
+  markPaymentReceived,
+  publicBaseUrl,
+  reportPaymentIssue,
+  runDuePaymentReminders,
+  simulateNextPaymentReminder,
+} from "@/lib/payments/payments";
+import { addDays } from "@/lib/payments/payment-messages";
+import { todayInPanama } from "@/lib/agent/system-prompt";
 import { findPendingPaymentConversationByPhone } from "@/lib/agent/conversation-lifecycle";
 
 const customerId = "11111111-1111-1111-1111-111111111111";
@@ -130,7 +143,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   vi.stubEnv("PUBLIC_BASE_URL", "https://demo.test");
   vi.stubEnv("TELEGRAM_OWNER_CHAT_ID", "555001");
-  h.script = []; h.instructions = []; h.telegram = [];
+  h.script = []; h.instructions = []; h.telegram = []; h.whatsapp = []; h.whatsappOn = false;
   await database.exec("truncate agente_comercial.customers, agente_comercial.products, agente_comercial.commercial_policies, agente_comercial.audit_log cascade");
   await database.query(
     "insert into agente_comercial.customers (id, name, phone, credit_total, credit_available, payment_terms) values ($1, 'Distribuidora Belleza del Istmo', '+507 6601-3325', 15000, 12000, '30 días')",
@@ -259,7 +272,7 @@ describe("payment collection without a human", () => {
 
     expect((await orders())[0].status).toBe("pagado");
     const payments = (await agentMessages()).filter((m) => m.startsWith("Recibimos su pago"));
-    expect(payments).toEqual(["Recibimos su pago de $885.00 del pedido #" + (await findPayment(token))!.orderShort + " (Yappy, pago de prueba). ¡Muchas gracias! Coordinamos la entrega de 50 unidades de Shampoo Professional 1L."]);
+    expect(payments).toEqual(["Recibimos su pago de $885.00 del pedido #" + (await findPayment(token))!.orderShort + ". ¡Muchas gracias! Coordinamos la entrega de 50 unidades de Shampoo Professional 1L."]);
     expect(h.telegram.filter((m) => m.text.startsWith("💰 Pago recibido"))).toHaveLength(1);
   });
 
@@ -300,5 +313,85 @@ describe("payment collection without a human", () => {
     vi.stubEnv("PUBLIC_BASE_URL", "");
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://$(PRIMARY_DOMAIN)");
     expect(publicBaseUrl()).toBeNull();
+  });
+});
+
+describe("due-date reminders", () => {
+  async function creditOrder() {
+    await negotiate();
+    await confirmWithSi();
+  }
+  const labels = async () =>
+    (await database.query<{ label: string }>("select label from agente_comercial.audit_log where label like 'Recordatorio de pago enviado%' order by created_at")).rows.map((r) => r.label);
+
+  it("demo: simulates the three reminders in order; only the overdue one alerts the owner", async () => {
+    await creditOrder();
+    const state = await getPaymentReminderState(conversationId);
+    expect(state).toMatchObject({ dueDate: addDays(todayInPanama(), 30), sentCount: 0, canSimulate: true });
+
+    for (let i = 0; i < 3; i++) await simulateNextPaymentReminder(conversationId);
+
+    const reminders = (await agentMessages()).slice(-3);
+    expect(reminders[0]).toMatch(/^Hola, le recordamos que el pago de su pedido #[A-Z0-9]{8} por \$885\.00 vence el/);
+    expect(reminders[1]).toMatch(/^Hola, hoy vence el pago de su pedido/);
+    expect(reminders[2]).toMatch(/^Hola, el pago de su pedido .* venció el/);
+    for (const r of reminders) expect(r).toMatch(/Pagar pedido: https:\/\/demo\.test\/pagar\//);
+    expect(await labels()).toEqual([
+      "Recordatorio de pago enviado: 1 de 3 — Recordatorio antes del vencimiento (simulado; en producción: 3 días antes del vencimiento)",
+      "Recordatorio de pago enviado: 2 de 3 — Vence hoy (simulado; en producción: el día del vencimiento)",
+      "Recordatorio de pago enviado: 3 de 3 — Pago vencido (simulado; en producción: 3 días después del vencimiento)",
+    ]);
+    expect(h.telegram.filter((m) => m.text.startsWith("⚠️ Pago vencido"))).toHaveLength(1);
+
+    await simulateNextPaymentReminder(conversationId);
+    expect(await labels()).toHaveLength(3);
+    expect((await getPaymentReminderState(conversationId))?.blockedReason).toMatch(/Ya se enviaron todos/);
+  });
+
+  it("stops reminding once the customer pays", async () => {
+    await creditOrder();
+    await simulateNextPaymentReminder(conversationId);
+    const { token } = (await getPaymentReminderState(conversationId))!;
+    await markPaymentReceived(token, "transferencia");
+    await simulateNextPaymentReminder(conversationId);
+    expect(await labels()).toHaveLength(1);
+    expect((await getPaymentReminderState(conversationId))?.blockedReason).toMatch(/ya pagó/);
+    expect(await runDuePaymentReminders(addDays(todayInPanama(), 60))).toBe(0);
+  });
+
+  it("production runner: sends each reminder when its date arrives, one per run", async () => {
+    await creditOrder();
+    const due = addDays(todayInPanama(), 30);
+    expect(await runDuePaymentReminders(todayInPanama())).toBe(0);
+    expect(await runDuePaymentReminders(addDays(due, -3))).toBe(1);
+    expect(await runDuePaymentReminders(addDays(due, -3))).toBe(0);
+    expect(await runDuePaymentReminders(due)).toBe(1);
+    expect(await runDuePaymentReminders(addDays(due, 3))).toBe(1);
+    expect(await runDuePaymentReminders(addDays(due, 30))).toBe(0);
+    expect((await labels()).every((l) => !l.includes("simulado"))).toBe(true);
+    expect(await labels()).toHaveLength(3);
+  });
+
+  it("production (meta mode): payment messages go out as approved templates with the token in the button", async () => {
+    vi.stubEnv("WHATSAPP_TEMPLATE_MODE", "meta");
+    h.whatsappOn = true;
+    await creditOrder();
+    await simulateNextPaymentReminder(conversationId);
+    const templates = h.whatsapp.filter((w) => w.kind === "template").map((w) => w.args);
+    const { token } = (await getPaymentReminderState(conversationId))!;
+    expect(templates).toEqual([
+      ["+507 6601-3325", "cobro_credito", "es", [expect.stringMatching(/^[A-Z0-9]{8}$/), "$885.00", "30 días", expect.any(String)], token],
+      ["+507 6601-3325", "recordatorio_pago", "es", [expect.any(String), "$885.00", expect.any(String)], token],
+    ]);
+  });
+
+  it("demo mode: the same copy goes out as a 'Pagar pedido' link button with the template footer", async () => {
+    h.whatsappOn = true;
+    await creditOrder();
+    const links = h.whatsapp.filter((w) => w.kind === "link").map((w) => w.args);
+    expect(links).toEqual([[
+      "+507 6601-3325", expect.stringMatching(/^Su pedido #/), "Pagar pedido", expect.stringMatching(/^https:\/\/demo\.test\/pagar\//),
+      "Si necesita pagar de otra forma, respóndame aquí.",
+    ]]);
   });
 });
