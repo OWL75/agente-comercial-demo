@@ -25,7 +25,7 @@ Todas las plantillas: categoría **Marketing**, idioma **Español (`es`)**, sin 
 
 ### `apertura_recompra`
 
-Para recompra atrasada o reducción de frecuencia. Variables: `{{1}}` cliente (`Empresa Demo`); `{{2}}` producto habitual (`Shampoo Professional 1L`).
+Para recompra atrasada o reducción de frecuencia. Variables: `{{1}}` cliente (`Distribuidora Belleza del Istmo`); `{{2}}` producto habitual (`Shampoo Professional 1L`).
 
 ```text
 Hola {{1}}, te escribo de Nova Distribution por {{2}}. Como solemos coordinar su reposición, quería saber cómo van de inventario esta semana. ¿Cambió algo en la demanda o necesitan reponer pronto?
@@ -33,7 +33,7 @@ Hola {{1}}, te escribo de Nova Distribution por {{2}}. Como solemos coordinar su
 
 ### `apertura_reactivacion`
 
-Para inactividad, caída del ticket y casos sin un producto y fecha confiables. Variables: `{{1}}` cliente (`Empresa Demo`); `{{2}}` producto habitual (`Shampoo Professional 1L`).
+Para inactividad, caída del ticket y casos sin un producto y fecha confiables. Variables: `{{1}}` cliente (`Distribuidora Belleza del Istmo`); `{{2}}` producto habitual (`Shampoo Professional 1L`).
 
 ```text
 Hola {{1}}, te escribo de Nova Distribution. Hace un tiempo no coordinamos un pedido de {{2}}. ¿Siguen trabajando con ese producto o cambió la necesidad?
@@ -41,7 +41,7 @@ Hola {{1}}, te escribo de Nova Distribution. Hace un tiempo no coordinamos un pe
 
 ### `apertura_producto`
 
-Para un cliente que parece comparar con la competencia, solo si hay stock y precio vigentes. Variables: `{{1}}` cliente (`Empresa Demo`); `{{2}}` producto (`Shampoo Professional 1L`); `{{3}}` precio por unidad (`$18.50`).
+Para un cliente que parece comparar con la competencia, solo si hay stock y precio vigentes. Variables: `{{1}}` cliente (`Distribuidora Belleza del Istmo`); `{{2}}` producto (`Shampoo Professional 1L`); `{{3}}` precio por unidad (`$18.50`).
 
 ```text
 Hola {{1}}, te escribo de Nova Distribution. Tenemos {{2}} a {{3}} por unidad. Si estás comparando opciones para tu próximo pedido, ¿qué cantidad tienes en mente?
@@ -49,7 +49,7 @@ Hola {{1}}, te escribo de Nova Distribution. Tenemos {{2}} a {{3}} por unidad. S
 
 ### `seguimiento_recordatorio`
 
-Primer seguimiento. Variables: `{{1}}` cliente (`Empresa Demo`); `{{2}}` producto (`Shampoo Professional 1L`).
+Primer seguimiento. Variables: `{{1}}` cliente (`Distribuidora Belleza del Istmo`); `{{2}}` producto (`Shampoo Professional 1L`).
 
 ```text
 Hola {{1}}, retomo mi mensaje sobre {{2}}. ¿Están cubiertos por ahora o prevén reponer pronto?
@@ -57,7 +57,7 @@ Hola {{1}}, retomo mi mensaje sobre {{2}}. ¿Están cubiertos por ahora o prevé
 
 ### `seguimiento_valor`
 
-Segundo seguimiento, solo con stock y precio vigentes. Variables: `{{1}}` cliente (`Empresa Demo`); `{{2}}` producto (`Shampoo Professional 1L`); `{{3}}` precio por unidad (`$18.50`).
+Segundo seguimiento, solo con stock y precio vigentes. Variables: `{{1}}` cliente (`Distribuidora Belleza del Istmo`); `{{2}}` producto (`Shampoo Professional 1L`); `{{3}}` precio por unidad (`$18.50`).
 
 ```text
 Hola {{1}}, revisé {{2}} y hoy tenemos disponibilidad a {{3}} por unidad. Si estás comparando opciones, dime qué cantidad manejas y te paso una propuesta concreta.
@@ -65,7 +65,7 @@ Hola {{1}}, revisé {{2}} y hoy tenemos disponibilidad a {{3}} por unidad. Si es
 
 ### `seguimiento_angulo`
 
-Tercer seguimiento. Variables: `{{1}}` cliente (`Empresa Demo`); `{{2}}` producto (`Shampoo Professional 1L`).
+Tercer seguimiento. Variables: `{{1}}` cliente (`Distribuidora Belleza del Istmo`); `{{2}}` producto (`Shampoo Professional 1L`).
 
 ```text
 Hola {{1}}, si algo de {{2}} no encaja todavía, puedo revisar precio, volumen o entrega contigo. ¿Qué tendría que mejorar para que te sirva?
@@ -73,7 +73,7 @@ Hola {{1}}, si algo de {{2}} no encaja todavía, puedo revisar precio, volumen o
 
 ### `seguimiento_cierre`
 
-Cuarto y último seguimiento. Variables: `{{1}}` cliente (`Empresa Demo`); `{{2}}` producto (`Shampoo Professional 1L`).
+Cuarto y último seguimiento. Variables: `{{1}}` cliente (`Distribuidora Belleza del Istmo`); `{{2}}` producto (`Shampoo Professional 1L`).
 
 ```text
 Hola {{1}}, cierro por ahora el tema de {{2}} para no insistir. Si más adelante necesitas reposición o una cotización, responde a este chat y lo retomamos. Gracias.

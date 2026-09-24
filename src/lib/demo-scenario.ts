@@ -8,7 +8,12 @@ import { normalizePhone } from "@/lib/channel/phone";
 // at a real customer by changing a form field or request payload.
 export const DEMO_CUSTOMER_ID = "de000000-0000-4000-8000-000000000001";
 export const DEMO_OPPORTUNITY_ID = "de000000-0000-4000-8000-000000000002";
-const DEMO_CUSTOMER_NAME = "Empresa Demo";
+export const DEMO_CUSTOMER_NAME = "Distribuidora Belleza del Istmo";
+const LEGACY_DEMO_CUSTOMER_NAME = "Empresa Demo";
+
+function isOwnedDemoCustomerName(name: string): boolean {
+  return name === DEMO_CUSTOMER_NAME || name === LEGACY_DEMO_CUSTOMER_NAME;
+}
 
 export type DemoScenarioStatus = {
   recipientConfigured: boolean;
@@ -56,7 +61,7 @@ export async function getDemoScenarioStatus(): Promise<DemoScenarioStatus> {
     ),
     scenarioReady: Boolean(
       fixture &&
-        fixture.customer_name === DEMO_CUSTOMER_NAME &&
+        isOwnedDemoCustomerName(fixture.customer_name) &&
         fixture.customer_id === DEMO_CUSTOMER_ID &&
         recipient &&
         normalizePhone(fixture.customer_phone ?? "") === recipient.digits,
@@ -89,7 +94,7 @@ export async function prepareDemoScenario(): Promise<string> {
       where id = ${DEMO_CUSTOMER_ID}
       for update
     `;
-    if (!customer || customer.name !== DEMO_CUSTOMER_NAME) {
+    if (!customer || !isOwnedDemoCustomerName(customer.name)) {
       throw new Error("El ID reservado del cliente demo pertenece a otro registro; reinicio cancelado.");
     }
 
@@ -168,7 +173,7 @@ export async function prepareDemoScenario(): Promise<string> {
         potential_high = 1200,
         priority = 'alta',
         status = 'preparada',
-        reason_text = 'Empresa Demo normalmente recompra cada 28 días y ya superó ese ciclo por 14 días.',
+        reason_text = ${`${DEMO_CUSTOMER_NAME} normalmente recompra cada 28 días y ya superó ese ciclo por 14 días.`},
         strategy_text = 'Entender qué detuvo la recompra, resolver la objeción y recuperar un pedido de Shampoo Professional 1L.',
         updated_at = now()
       where id = ${DEMO_OPPORTUNITY_ID}

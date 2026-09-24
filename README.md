@@ -55,7 +55,7 @@ Canal desacoplado de la lógica del agente (`src/lib/channel/`): si las credenci
 
 1. Desde `DEMO_WHATSAPP_RECIPIENT`, enviar cualquier mensaje al número del agente para abrir la ventana de atención de 24 horas.
 2. Entrar a `/demo` y comprobar que teléfono, envío y webhook aparezcan listos.
-3. Pulsar **Crear/Reiniciar demostración**. Esto reconstruye únicamente `Empresa Demo`; no toca los demás clientes.
+3. Pulsar **Crear/Reiniciar demostración**. Esto reconstruye únicamente `Distribuidora Belleza del Istmo`; no toca los demás clientes.
 4. En la ficha que se abre, pulsar **Iniciar conversación**. El agente enviará el primer mensaje libre dentro de la ventana ya abierta.
 5. Responder desde WhatsApp mientras se proyecta la vista web para mostrar contexto, herramientas, políticas y cierre.
 

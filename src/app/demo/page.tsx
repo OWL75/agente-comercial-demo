@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PrepareDemoButton } from "@/components/prepare-demo-button";
-import { getDemoScenarioStatus } from "@/lib/demo-scenario";
+import { DEMO_CUSTOMER_NAME, getDemoScenarioStatus } from "@/lib/demo-scenario";
 import { prepareDemoAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +62,7 @@ export default async function DemoPage() {
             />
             <StatusRow
               ok={status.scenarioReady}
-              label="Empresa Demo"
+              label={DEMO_CUSTOMER_NAME}
               detail={status.scenarioReady ? "Lista para una nueva conversación." : "Todavía no se creó o necesita reiniciarse."}
             />
           </ul>
@@ -72,14 +72,14 @@ export default async function DemoPage() {
           <h2 className="text-sm font-semibold text-slate-100">Antes de presentar</h2>
           <ol className="mt-3 space-y-3 text-sm leading-relaxed text-slate-300">
             <li><span className="mr-2 text-cyan-400">1.</span>Desde el teléfono demo, envía cualquier mensaje al número del agente.</li>
-            <li><span className="mr-2 text-cyan-400">2.</span>Pulsa el botón de abajo para limpiar y reconstruir Empresa Demo.</li>
+            <li><span className="mr-2 text-cyan-400">2.</span>Pulsa el botón de abajo para limpiar y reconstruir {DEMO_CUSTOMER_NAME}.</li>
             <li><span className="mr-2 text-cyan-400">3.</span>En la ficha que se abrirá, pulsa “Iniciar conversación”.</li>
             <li><span className="mr-2 text-cyan-400">4.</span>Proyecta la vista web y responde al agente desde WhatsApp.</li>
           </ol>
 
           <div className="mt-6">
             {status.recipientConfigured ? (
-              <PrepareDemoButton action={prepareDemoAction} ready={status.scenarioReady} />
+              <PrepareDemoButton action={prepareDemoAction} ready={status.scenarioReady} customerName={DEMO_CUSTOMER_NAME} />
             ) : (
               <button
                 type="button"

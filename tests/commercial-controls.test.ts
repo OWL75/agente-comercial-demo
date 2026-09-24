@@ -22,6 +22,7 @@ import { startConversationForOpportunity } from "@/lib/agent/conversation-lifecy
 import { getOpenAiToolDefinitions } from "@/lib/agent/tools";
 import {
   DEMO_CUSTOMER_ID,
+  DEMO_CUSTOMER_NAME,
   DEMO_OPPORTUNITY_ID,
   getDemoScenarioStatus,
   prepareDemoScenario,
@@ -206,5 +207,16 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
       [DEMO_CUSTOMER_ID],
     );
     await expect(prepareDemoScenario()).rejects.toThrow("datos ajenos");
+  });
+
+  it("accepts the previous fixture name and rebuilds it with the presentation name", async () => {
+    process.env.DEMO_WHATSAPP_RECIPIENT = "+50760001234";
+    await prepareDemoScenario();
+    await database.query("update agente_comercial.customers set name=$1 where id=$2", ["Empresa Demo", DEMO_CUSTOMER_ID]);
+    expect(await getDemoScenarioStatus()).toMatchObject({ scenarioReady: true });
+
+    await prepareDemoScenario();
+    expect((await database.query("select name from agente_comercial.customers where id=$1", [DEMO_CUSTOMER_ID])).rows)
+      .toEqual([{ name: DEMO_CUSTOMER_NAME }]);
   });
 });

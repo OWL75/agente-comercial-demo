@@ -89,7 +89,7 @@ muestres valores secretos.
 1. El teléfono configurado en `DEMO_WHATSAPP_RECIPIENT` escribe primero al número del agente.
 2. Abrir `/demo` y comprobar que los cuatro indicadores estén listos.
 3. Pulsar **Crear/Reiniciar demostración**.
-4. En la ficha de Empresa Demo, pulsar **Iniciar conversación**.
+4. En la ficha de Distribuidora Belleza del Istmo, pulsar **Iniciar conversación**.
 5. Confirmar que el mensaje aparece en la vista web y llega al WhatsApp real.
 6. Responder desde WhatsApp y confirmar que la respuesta aparece en la conversación web.
 

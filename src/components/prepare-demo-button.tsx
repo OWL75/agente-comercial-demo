@@ -15,7 +15,7 @@ function SubmitButton({ ready }: { ready: boolean }) {
   );
 }
 
-export function PrepareDemoButton({ action, ready }: { action: () => Promise<void>; ready: boolean }) {
+export function PrepareDemoButton({ action, ready, customerName }: { action: () => Promise<void>; ready: boolean; customerName: string }) {
   return (
     <form
       action={action}
@@ -23,7 +23,7 @@ export function PrepareDemoButton({ action, ready }: { action: () => Promise<voi
         if (
           ready &&
           !window.confirm(
-            "Esto eliminará únicamente la conversación, el pedido y la memoria de Empresa Demo. ¿Continuar?",
+            `Esto eliminará únicamente la conversación, el pedido y la memoria de ${customerName}. ¿Continuar?`,
           )
         ) {
           event.preventDefault();

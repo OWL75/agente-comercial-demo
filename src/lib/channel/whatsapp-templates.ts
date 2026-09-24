@@ -30,7 +30,7 @@ export const WHATSAPP_TEMPLATES: Record<TemplateName, WhatsAppTemplate> = {
     purpose: "Primer contacto cuando el cliente se atrasó en su recompra habitual.",
     body: "Hola {{1}}, te escribo de Nova Distribution por {{2}}. Como solemos coordinar su reposición, quería saber cómo van de inventario esta semana. ¿Cambió algo en la demanda o necesitan reponer pronto?",
     params: [
-      { label: "Cliente", example: "Empresa Demo" },
+      { label: "Cliente", example: "Distribuidora Belleza del Istmo" },
       { label: "Producto habitual", example: "Shampoo Professional 1L" },
     ],
   },
@@ -40,7 +40,7 @@ export const WHATSAPP_TEMPLATES: Record<TemplateName, WhatsAppTemplate> = {
     purpose: "Primer contacto con un cliente inactivo o cuyo ticket bajó.",
     body: "Hola {{1}}, te escribo de Nova Distribution. Hace un tiempo no coordinamos un pedido de {{2}}. ¿Siguen trabajando con ese producto o cambió la necesidad?",
     params: [
-      { label: "Cliente", example: "Empresa Demo" },
+      { label: "Cliente", example: "Distribuidora Belleza del Istmo" },
       { label: "Producto habitual", example: "Shampoo Professional 1L" },
     ],
   },
@@ -50,7 +50,7 @@ export const WHATSAPP_TEMPLATES: Record<TemplateName, WhatsAppTemplate> = {
     purpose: "Primer contacto con un cliente que se fue a la competencia: abre con el precio real del producto.",
     body: "Hola {{1}}, te escribo de Nova Distribution. Tenemos {{2}} a {{3}} por unidad. Si estás comparando opciones para tu próximo pedido, ¿qué cantidad tienes en mente?",
     params: [
-      { label: "Cliente", example: "Empresa Demo" },
+      { label: "Cliente", example: "Distribuidora Belleza del Istmo" },
       { label: "Producto habitual", example: "Shampoo Professional 1L" },
       { label: "Precio unitario vigente", example: "$18.50" },
     ],
@@ -61,7 +61,7 @@ export const WHATSAPP_TEMPLATES: Record<TemplateName, WhatsAppTemplate> = {
     purpose: "Seguimiento 1: recordatorio ligero con una pregunta fácil de responder.",
     body: "Hola {{1}}, retomo mi mensaje sobre {{2}}. ¿Están cubiertos por ahora o prevén reponer pronto?",
     params: [
-      { label: "Cliente", example: "Empresa Demo" },
+      { label: "Cliente", example: "Distribuidora Belleza del Istmo" },
       { label: "Producto habitual", example: "Shampoo Professional 1L" },
     ],
   },
@@ -71,7 +71,7 @@ export const WHATSAPP_TEMPLATES: Record<TemplateName, WhatsAppTemplate> = {
     purpose: "Seguimiento 2: aporta valor con precio y disponibilidad reales.",
     body: "Hola {{1}}, revisé {{2}} y hoy tenemos disponibilidad a {{3}} por unidad. Si estás comparando opciones, dime qué cantidad manejas y te paso una propuesta concreta.",
     params: [
-      { label: "Cliente", example: "Empresa Demo" },
+      { label: "Cliente", example: "Distribuidora Belleza del Istmo" },
       { label: "Producto habitual", example: "Shampoo Professional 1L" },
       { label: "Precio unitario vigente", example: "$18.50" },
     ],
@@ -82,7 +82,7 @@ export const WHATSAPP_TEMPLATES: Record<TemplateName, WhatsAppTemplate> = {
     purpose: "Seguimiento 3: cambia de ángulo hacia la objeción probable.",
     body: "Hola {{1}}, si algo de {{2}} no encaja todavía, puedo revisar precio, volumen o entrega contigo. ¿Qué tendría que mejorar para que te sirva?",
     params: [
-      { label: "Cliente", example: "Empresa Demo" },
+      { label: "Cliente", example: "Distribuidora Belleza del Istmo" },
       { label: "Producto habitual", example: "Shampoo Professional 1L" },
     ],
   },
@@ -92,7 +92,7 @@ export const WHATSAPP_TEMPLATES: Record<TemplateName, WhatsAppTemplate> = {
     purpose: "Seguimiento 4: despedida respetuosa que cierra el ciclo.",
     body: "Hola {{1}}, cierro por ahora el tema de {{2}} para no insistir. Si más adelante necesitas reposición o una cotización, responde a este chat y lo retomamos. Gracias.",
     params: [
-      { label: "Cliente", example: "Empresa Demo" },
+      { label: "Cliente", example: "Distribuidora Belleza del Istmo" },
       { label: "Producto habitual", example: "Shampoo Professional 1L" },
     ],
   },
