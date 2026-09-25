@@ -22,7 +22,7 @@ import { loadFollowUpContext } from "@/lib/agent/follow-up-data";
 import { askOwner } from "@/lib/agent/owner-notify";
 import { resolveProductRefs } from "@/lib/tools/catalog";
 import { isRepetition } from "@/lib/agent/follow-up-context";
-import { asksForConfirmation, asksPermissionToQuote, onlyMatchesReference, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
+import { asksForConfirmation, asksPermissionToQuote, mentionsSavingsAmount, onlyMatchesReference, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
 import { announceOrderToOwner, pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { formatDateEs } from "@/lib/payments/payment-messages";
 
@@ -310,7 +310,21 @@ async function executeAgentLoop(
     await logAudit({ conversationId, category: "system", label: "Oferta igual al precio del competidor: el agente la mejora y explica la diferencia", payload: { draft: reply } });
     input = input.concat(response.output, [{
       role: "user",
-      content: "(Nota interna del sistema, nunca la menciones al cliente.) Tu oferta solo iguala el precio de su proveedor: así el cliente no ve ninguna diferencia. Prepara la oferta con prepare_verified_offer a negotiation.recommendedUnitPrice, di el ahorro concreto frente a su proveedor y una o dos ventajas de get_value_proposition que respondan a lo que valora, y pide confirmación.",
+      content: "(Nota interna del sistema, nunca la menciones al cliente.) Tu oferta solo iguala el precio de su proveedor: así el cliente no ve ninguna diferencia. Prepara la oferta con prepare_verified_offer a negotiation.recommendedUnitPrice, preséntala sin cifrar el ahorro y con una o dos ventajas de get_value_proposition que respondan a lo que valora, y pide confirmación.",
+    }]);
+    response = await untilText(await client.responses.create({ model, instructions, input, tools }));
+    if (!response) return "";
+    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
+    pendingApproval = await hasPendingApproval();
+    violations = violationsOf(reply);
+  }
+
+  // A small saving in dollars ("$5.00 menos") makes the improvement look minor.
+  if (opts.trigger === "customer_message" && mentionsSavingsAmount(reply)) {
+    await logAudit({ conversationId, category: "system", label: "Respuesta que cifra el ahorro: el agente la reescribe sin ese monto", payload: { draft: reply } });
+    input = input.concat(response.output, [{
+      role: "user",
+      content: "(Nota interna del sistema, nunca la menciones al cliente.) No cifres el ahorro frente a su proveedor (\"$5.00 menos\"): un monto pequeño hace ver la mejora como poca cosa. Escribe la misma oferta con el precio por unidad, el total y las ventajas, sin ese monto.",
     }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";

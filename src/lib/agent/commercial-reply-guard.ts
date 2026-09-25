@@ -62,6 +62,13 @@ function capturedMoney(reply: string, pattern: RegExp): number[] {
   return [...reply.matchAll(pattern)].map((match) => Number(match[1].replace(",", ".")));
 }
 
+function savingsOf(offer: VerifiedOfferResult): number[] {
+  const reference = offer.negotiation?.referenceUnitPrice;
+  if (reference == null || offer.netUnitPrice >= reference) return [];
+  const perUnitCents = Math.round((reference - offer.netUnitPrice) * 100);
+  return [perUnitCents / 100, (perUnitCents * offer.quantity) / 100];
+}
+
 export function commercialReplyViolations(args: {
   reply: string;
   verifiedOffer: VerifiedOfferResult | null;
@@ -103,11 +110,11 @@ export function commercialReplyViolations(args: {
     verifiedOffer.netUnitPrice,
     verifiedOffer.subtotal,
     verifiedOffer.total,
-    // The saving against the competitor's price ("$5.00 menos") and that price itself.
+    // The competitor's price the offer beats ("en vez de $17.75") is the customer's own figure.
     ...(verifiedOffer.negotiation?.referenceUnitPrice != null ? [verifiedOffer.negotiation.referenceUnitPrice] : []),
-    ...(verifiedOffer.negotiation?.savingsVsReference
-      ? [verifiedOffer.negotiation.savingsVsReference.perUnit, verifiedOffer.negotiation.savingsVsReference.total]
-      : []),
+    // A spelled-out saving is true, just not worth saying: mentionsSavingsAmount
+    // rewrites it without blocking the offer as an unverified figure.
+    ...savingsOf(verifiedOffer),
   ];
   if (ownMoney.some((value) => !allowedMoney.some((allowed) => sameMoney(value, allowed)))) {
     violations.push("offer_money_mismatch");
@@ -179,4 +186,12 @@ export function onlyMatchesReference(reply: string, offer: VerifiedOfferResult |
   if (!offer || offer.status !== "ready" || !n || n.referenceUnitPrice == null || n.customerAskUnitPrice != null) return false;
   if (n.recommendedUnitPrice == null || n.recommendedUnitPrice >= offer.netUnitPrice) return false;
   return sameMoney(offer.netUnitPrice, n.referenceUnitPrice) && presentsFinalVerifiedOffer(reply, offer);
+}
+
+// "$5.00 menos en su pedido": a small saving said out loud makes the
+// improvement look minor. The better price and the advantages speak for it.
+const SAVINGS_AMOUNT = /\$\s*\d+(?:[.,]\d{1,2})?\s+(?:menos|de\s+ahorro)\b|\bahorr(?:a|o|ar[ií]a|aría)\s+(?:usted\s+)?\$/i;
+
+export function mentionsSavingsAmount(text: string): boolean {
+  return SAVINGS_AMOUNT.test(text);
 }

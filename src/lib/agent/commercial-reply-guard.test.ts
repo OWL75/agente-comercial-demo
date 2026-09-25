@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commercialReplyViolations, onlyMatchesReference, presentsFinalVerifiedOffer } from "./commercial-reply-guard";
+import { commercialReplyViolations, mentionsSavingsAmount, onlyMatchesReference, presentsFinalVerifiedOffer } from "./commercial-reply-guard";
 import type { VerifiedOfferResult } from "@/lib/tools/offers";
 
 const ready: VerifiedOfferResult = {
@@ -145,8 +145,8 @@ describe("real conversation 2026-09-25 01:44 UTC: beating the competitor, not ma
     customerAskUnitPrice: null, lastOfferedUnitPrice: null, autonomyFloorUnitPrice: 17.58, referenceUnitPrice: 17.75,
     askWithinAutonomy: null, recommendedUnitPrice: 17.65, recommendationBasis: "beat_reference" as const,
   };
-  const matched: VerifiedOfferResult = { ...ready, netUnitPrice: 17.75, total: 887.5, discountPct: 4.0541, negotiation: { ...negotiation, savingsVsReference: null } };
-  const beaten: VerifiedOfferResult = { ...ready, netUnitPrice: 17.65, total: 882.5, discountPct: 4.5946, negotiation: { ...negotiation, savingsVsReference: { perUnit: 0.1, total: 5 } } };
+  const matched: VerifiedOfferResult = { ...ready, netUnitPrice: 17.75, total: 887.5, discountPct: 4.0541, negotiation };
+  const beaten: VerifiedOfferResult = { ...ready, netUnitPrice: 17.65, total: 882.5, discountPct: 4.5946, negotiation };
 
   it("flags an offer that only matches the competitor while there is margin to beat it", () => {
     expect(onlyMatchesReference("Puedo igualar el precio: 50 unidades a $17.75 por unidad, total $887.50. ¿Me confirma que lo prepare?", matched)).toBe(true);
@@ -158,8 +158,14 @@ describe("real conversation 2026-09-25 01:44 UTC: beating the competitor, not ma
     expect(onlyMatchesReference("Perfecto, se lo dejo en $17.75 por unidad, total $887.50. ¿Me confirma el pedido?", asked)).toBe(false);
   });
 
-  it("lets the agent state the saving and the competitor price it beats, nothing else", () => {
-    expect(violations("Le ofrezco $17.65 por unidad en vez de $17.75, son $5.00 menos en su pedido: total $882.50. ¿Me confirma el pedido?", beaten)).toEqual([]);
-    expect(violations("Le ofrezco $17.65 por unidad, son $9.00 menos en su pedido: total $882.50. ¿Me confirma el pedido?", beaten)).toContain("offer_money_mismatch");
+  it("lets the agent name the competitor price it beats, and no other new figure", () => {
+    expect(violations("Le ofrezco $17.65 por unidad en vez de $17.75: total $882.50. ¿Me confirma el pedido?", beaten)).toEqual([]);
+    expect(violations("Le ofrezco $17.65 por unidad, total $882.50, con un bono de $9.00. ¿Me confirma el pedido?", beaten)).toContain("offer_money_mismatch");
+  });
+
+  it("real conversation 02:0x UTC: '$5.00 menos' is not said — a small saving looks minor", () => {
+    expect(mentionsSavingsAmount("Le puedo dejar el Shampoo en $17.65 por unidad, $5.00 menos que su proveedor en 50 unidades.")).toBe(true);
+    expect(mentionsSavingsAmount("Con este precio ahorra $5.00 en su pedido.")).toBe(true);
+    expect(mentionsSavingsAmount("Le puedo dejar el Shampoo en $17.65 por unidad, por debajo de lo que paga hoy: total $882.50.")).toBe(false);
   });
 });

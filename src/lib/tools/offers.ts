@@ -71,8 +71,6 @@ export type VerifiedOfferResult = {
     /** The next price to offer (see nextConcession). */
     recommendedUnitPrice: number | null;
     recommendationBasis: "ask" | "beat_reference" | "step" | "floor" | "at_floor";
-    /** What this offer saves against the competitor's price, to say it concretely. */
-    savingsVsReference: { perUnit: number; total: number } | null;
   };
   roundingRule: "round_net_unit_to_cent_then_multiply";
 };
@@ -157,12 +155,6 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
     askWithinAutonomy: target == null ? null : concession.withinAutonomy,
     recommendedUnitPrice: concession.unitPrice,
     recommendationBasis: concession.basis,
-    savingsVsReference: reference != null && money.netUnitPrice < reference
-      ? {
-          perUnit: Math.round((reference - money.netUnitPrice) * 100) / 100,
-          total: Math.round((reference - money.netUnitPrice) * input.quantity * 100) / 100,
-        }
-      : null,
   };
 
   const base: Omit<VerifiedOfferResult, "status" | "approvalsNeeded"> = {
