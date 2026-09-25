@@ -122,6 +122,12 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
     await presentBestPrice(conversationId, 200);
     await expect(requestApproval(request())).resolves.toMatchObject({ approvalId: expect.any(String) });
   });
+  it("counts the best price as offered once the customer read it, whatever the closing question (2026-09-25 19:31)", async () => {
+    await database.query(
+      "insert into agente_comercial.messages (conversation_id, direction, sender, body) values ($1, 'outbound', 'agent', $2)",
+      [conversationId, "Lo mejor que puedo dejarle es *$17.58 por unidad*, total *$879*. ¿Le serviría probarlo así?"]);
+    await expect(requestApproval(request())).resolves.toMatchObject({ approvalId: expect.any(String) });
+  });
   it("creates and reuses a pending approval, then accepts the exact approved order", async () => {
     await presentBestPrice(conversationId, 200);
     const first = await requestApproval(request());

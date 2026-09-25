@@ -234,3 +234,16 @@ describe("real conversation 2026-09-25 18:18 UTC: \"mañana en la tarde con mi s
     expect(revealsApproval("Lo revisé con Abdiel, el gerente, y pude conseguirle $17.50 para este pedido.")).toBe(false);
   });
 });
+
+describe("real conversation 2026-09-25 19:31 UTC: competitor already below the floor", () => {
+  it("recognizes conditional soft closes as the close of the offer", () => {
+    expect(asksForConfirmation("¿Le serviría probarlo así en su próxima reposición?")).toBe(true);
+    expect(asksForConfirmation("¿Aun así le funcionaría probar con Nova en esas condiciones?")).toBe(true);
+  });
+
+  it("flags asking permission to consult the manager", async () => {
+    const { asksPermissionToConsult } = await import("./commercial-reply-guard");
+    expect(asksPermissionToConsult("Si para usted es indispensable igualar los $17.50, lo reviso con Abdiel, el gerente. ¿Quiere que lo consulte?")).toBe(true);
+    expect(asksPermissionToConsult("Lo reviso con Abdiel, el gerente, y le escribo en unos minutos.")).toBe(false);
+  });
+});

@@ -460,7 +460,7 @@ describe("real conversation 2026-09-24 16:38 UTC: '¿No tienes un mejor precio?'
 
     h.script = [
       calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.5, deliveryHours: 24 })),
-      say("Ese precio tendría que consultarlo con Abdiel. ¿Quiere que lo consulte?"),
+      say("Por debajo de $17.58 ya no depende de mí: lo reviso con Abdiel, el gerente, y le escribo en unos minutos."),
     ];
     await runAgentTurn(conversationId, "Déjamelo en menos");
     expect((await toolResults("prepare_verified_offer")).at(-1)).toMatchObject({

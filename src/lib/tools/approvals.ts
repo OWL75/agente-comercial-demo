@@ -81,7 +81,15 @@ export async function requestApproval(input: RequestApprovalInput) {
         order by created_at desc limit 1
       `;
       const lastOffered = lastPresented?.net == null ? null : Number(lastPresented.net);
-      if (lastOffered == null || lastOffered - floor > 0.004) {
+      // The best price counts as offered once the customer read it, however the
+      // message closed ("¿Le serviría así?" does not register a presentation).
+      const agentMessages = await tx<Array<{ body: string }>>`
+        select body from agente_comercial.messages
+        where conversation_id = ${input.conversationId} and sender = 'agent'
+      `;
+      const floorWritten = agentMessages.some((m) =>
+        [...m.body.matchAll(/\$\s*(\d+(?:[.,]\d{1,2})?)/g)].some((match) => Math.abs(Number(match[1].replace(",", ".")) - floor) < 0.005));
+      if (!floorWritten && (lastOffered == null || lastOffered - floor > 0.004)) {
         throw new Error(
           `Todavía no le ofreciste tu mejor precio. Antes de consultar al gerente, prepara con prepare_verified_offer la oferta a $${floor.toFixed(2)} por unidad (netUnitPrice) y preséntasela con la razón para quedarse con Nova. Solo si insiste en su precio, solicita la aprobación.`,
         );

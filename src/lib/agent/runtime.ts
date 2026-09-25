@@ -23,7 +23,7 @@ import { loadFollowUpContext, type FollowUpAgreement } from "@/lib/agent/follow-
 import { askOwner } from "@/lib/agent/owner-notify";
 import { resolveProductRefs } from "@/lib/tools/catalog";
 import { isRepetition } from "@/lib/agent/follow-up-context";
-import { asksForConfirmation, asksPermissionToQuote, hideStockCount, mentionsSavingsAmount, onlyMatchesReference, repeatsOfferList, revealsApproval, soundsPushy, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
+import { asksForConfirmation, asksPermissionToConsult, asksPermissionToQuote, hideStockCount, mentionsSavingsAmount, onlyMatchesReference, repeatsOfferList, revealsApproval, soundsPushy, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
 import { announceOrderToOwner, pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { formatDateEs } from "@/lib/payments/payment-messages";
 
@@ -319,6 +319,21 @@ async function executeAgentLoop(
     input = input.concat(response.output, [{
       role: "user",
       content: "(Nota interna del sistema, nunca la menciones al cliente.) No pidas permiso para cotizar. Si ya conoces producto, cantidad (o su cantidad habitual) y su precio de referencia, prepara la oferta con prepare_verified_offer y preséntala ahora (negotiation.recommendedUnitPrice), destacando lo que suma y cerrando con una pregunta suave (\"¿Le sirve así?\"). Si falta un dato, pregunta solo ese dato.",
+    }]);
+    response = await untilText(await client.responses.create({ model, instructions, input, tools }));
+    if (!response) return "";
+    reply = cleanReply(response.output_text ?? "");
+    pendingApproval = await hasPendingApproval();
+    violations = violationsOf(reply);
+  }
+
+  // "¿Quiere que lo consulte?" after the customer already pushed on price:
+  // the agent consults the manager in this turn instead of asking.
+  if (opts.trigger === "customer_message" && !pendingApproval && asksPermissionToConsult(reply)) {
+    await logAudit({ conversationId, category: "system", label: "Respuesta que pide permiso para consultar al gerente: el agente consulta directamente", payload: { draft: reply } });
+    input = input.concat(response.output, [{
+      role: "user",
+      content: "(Nota interna del sistema, nunca la menciones al cliente.) No le pidas permiso para consultar al gerente. Si el cliente pidió un precio por debajo de tu margen o insiste después de tu mejor precio, solicita ahora la aprobación con request_approval (usa el discountPct que devolvió prepare_verified_offer con netUnitPrice y customerAskUnitPrice) y dile con naturalidad que lo revisas con Abdiel, el gerente, y le escribes en unos minutos. Si todavía no pidió nada concreto, pregúntale si nos haría el pedido en caso de conseguirle un mejor precio.",
     }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";

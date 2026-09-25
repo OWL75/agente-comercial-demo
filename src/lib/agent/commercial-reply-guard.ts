@@ -8,7 +8,7 @@ const PENDING_LANGUAGE = /\b(pendiente|lo\s+reviso|lo\s+estoy\s+revisando|revisa
 // Both "tú" and "usted" forms: the agent writes in "usted" ("¿Confirma el pedido?").
 // Soft closes ("¿Le sirve así?", "¿Se lo dejo listo?") ask the same thing
 // without pressure, so a plain "sí" to them confirms the offer too.
-const CONFIRMATION_ASK = /\b(confirmas?|me\s+confirmas?|procedemos|procedo|cerramos|hago\s+el\s+pedido|registro\s+el\s+pedido|ingreso\s+el\s+pedido|lo\s+ingreso|(?:le|te)\s+(?:sirve|funciona)|se\s+lo\s+(?:dejo|preparo|aparto)|lo\s+dejo\s+listo)\b/i;
+const CONFIRMATION_ASK = /\b(confirmas?|me\s+confirmas?|procedemos|procedo|cerramos|hago\s+el\s+pedido|registro\s+el\s+pedido|ingreso\s+el\s+pedido|lo\s+ingreso|(?:le|te)\s+(?:sirve|serviría|serviria|funciona|funcionaría|funcionaria)|se\s+lo\s+(?:dejo|preparo|aparto)|lo\s+dejo\s+listo)\b/i;
 
 /** The agent's message asks the customer to confirm the offer it presents. */
 export function asksForConfirmation(text: string): boolean {
@@ -241,4 +241,11 @@ const REVEALS_APPROVAL = /\b(aprob[óo]|aprobad[oa]s?|autoriz[óo]|autorizad[oa]
 
 export function revealsApproval(text: string): boolean {
   return REVEALS_APPROVAL.test(text);
+}
+
+// "¿Quiere que lo consulte?" makes the customer ask twice for the same thing.
+const PERMISSION_TO_CONSULT = /¿[^?]*\b(?:quiere|desea|le\s+parece)\s+que\s+(?:lo|se\s+lo|le)\s+(?:consulte|revise|pregunte)\b/i;
+
+export function asksPermissionToConsult(text: string): boolean {
+  return PERMISSION_TO_CONSULT.test(text);
 }
