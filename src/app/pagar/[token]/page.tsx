@@ -74,7 +74,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ token:
       {!paid && (
         <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
           {payment.issueReported ? (
-            <p className="text-sm text-slate-300">Recibimos su consulta. Abdiel le escribe por WhatsApp en breve.</p>
+            <p className="text-sm text-slate-300">Recibimos su consulta. Fernán le escribe por WhatsApp en breve.</p>
           ) : (
             <form action={reportIssueAction.bind(null, token)} className="space-y-3">
               <label htmlFor="issue" className="block text-sm font-medium text-slate-200">¿Necesita pagar de otra forma o tiene un problema?</label>

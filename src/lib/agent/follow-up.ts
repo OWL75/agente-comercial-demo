@@ -2,7 +2,8 @@ import "server-only";
 import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/agent/audit";
 import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
-import { sendFollowUp } from "@/lib/agent/runtime";
+import { sendAgreedFollowUp, sendFollowUp } from "@/lib/agent/runtime";
+import { loadAgreement, type FollowUpAgreement } from "@/lib/agent/follow-up-data";
 import { buildFollowUpTemplate, conversationNeedsTemplate, sendTemplateMessage } from "@/lib/agent/template-outreach";
 import { FOLLOW_UP_TOTAL, nextFollowUpStep } from "@/lib/agent/follow-up-sequence";
 
@@ -10,7 +11,23 @@ export type FollowUpState = {
   sentCount: number;
   canSimulate: boolean;
   blockedReason: string | null;
+  /** The moment the customer agreed to be contacted, while that touch is still owed. */
+  agreed: FollowUpAgreement | null;
 };
+
+/** The agreed touch goes out once per agreement: any customer reply opens a new one. */
+async function agreedTouchSent(conversationId: string): Promise<boolean> {
+  const [row] = await sql`
+    select 1 from agente_comercial.audit_log a
+    where a.conversation_id = ${conversationId} and a.payload->>'agreedFollowUp' = 'true'
+      and a.created_at > coalesce(
+        (select max(m.created_at) from agente_comercial.messages m
+          where m.conversation_id = ${conversationId} and m.sender = 'customer'),
+        '-infinity'::timestamptz)
+    limit 1
+  `;
+  return !!row;
+}
 
 /**
  * Follow-ups are counted from the audit log since the customer's last
@@ -39,7 +56,7 @@ export async function getFollowUpState(conversationId: string): Promise<FollowUp
     left join agente_comercial.customer_insights ci on ci.conversation_id = conv.id
     where conv.id = ${conversationId}
   `;
-  if (!row) return { sentCount: 0, canSimulate: false, blockedReason: "Conversación no encontrada." };
+  if (!row) return { sentCount: 0, canSimulate: false, blockedReason: "Conversación no encontrada.", agreed: null };
 
   const sentCount: number = row.sent_count;
   const blockedReason = row.ended_at
@@ -53,12 +70,40 @@ export async function getFollowUpState(conversationId: string): Promise<FollowUp
           : row.outcome === "rechazo_firme"
             ? "El cliente rechazó la propuesta de forma definitiva: no se envían seguimientos."
             : row.waiting_for_date
-              ? `El cliente pidió retomar el ${row.next_contact_date}: la secuencia espera hasta esa fecha.`
+              ? `El cliente pidió retomar el ${row.next_contact_date}: la secuencia normal espera hasta esa fecha.`
               : sentCount >= FOLLOW_UP_TOTAL
                 ? "Secuencia completa: la oportunidad queda en pausa hasta el próximo ciclo de compra."
                 : null;
 
-  return { sentCount, canSimulate: blockedReason === null, blockedReason };
+  const agreement = !row.ended_at && row.last_sender === "agent" && !(await isCustomerSuppressed(row.customer_id))
+    ? await loadAgreement(conversationId)
+    : null;
+  const agreed = agreement && !(await agreedTouchSent(conversationId)) ? agreement : null;
+
+  return { sentCount, canSimulate: blockedReason === null, blockedReason, agreed };
+}
+
+/** Demo control: the agreed moment arrived ("mañana en la tarde"), so the agent writes as promised. */
+export async function simulateAgreedFollowUp(conversationId: string): Promise<void> {
+  const { agreed } = await getFollowUpState(conversationId);
+  if (!agreed) return;
+  try {
+    const { reply } = await sendAgreedFollowUp(conversationId, agreed);
+    if (!reply) return;
+    await logAudit({
+      conversationId,
+      category: "system",
+      label: `Seguimiento acordado con el cliente (simulado; en producción: el ${agreed.date}${agreed.action ? `, ${agreed.action}` : ""})`.slice(0, 300),
+      payload: { agreedFollowUp: true, simulated: true, agreement: agreed },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await logAudit({
+      conversationId,
+      category: "system",
+      label: `No se pudo generar el seguimiento acordado: ${message}`.slice(0, 300),
+    });
+  }
 }
 
 /** Demo control: pretends the customer stayed silent and sends the next touch right away. */

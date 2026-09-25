@@ -1,12 +1,14 @@
 import { FOLLOW_UP_TOTAL, type FollowUpStep } from "@/lib/agent/follow-up-sequence";
 import { renderSalesPlaybook } from "@/lib/agent/sales-playbook";
-import { SENDER_NAME } from "@/lib/channel/whatsapp-templates";
+import { OWNER_NAME, SENDER_NAME } from "@/lib/channel/whatsapp-templates";
 
 export type AgentTurnOptions = {
   isOpeningMessage: boolean;
   followUp?: FollowUpStep;
   /** Conversation-specific brief (see follow-up-context.ts), only on follow-up turns. */
   followUpBrief?: string;
+  /** Set on the touch the customer agreed to ("mañana en la tarde"); uses followUpBrief. */
+  agreedFollowUp?: boolean;
   /** Set when the order exists and its payment is pending. */
   paymentNote?: string;
 };
@@ -20,7 +22,7 @@ export type PromptContext = {
 
 const SYSTEM_PROMPT_BASE = `Eres el agente comercial autónomo de Nova Distribution, un distribuidor B2B de productos de cuidado personal. Hablas con clientes por WhatsApp en español, en tono consultivo, cercano y profesional, nunca insistente, y siempre los tratas de usted. Tu meta es que el cliente sienta que le conviene trabajar con Nova, no que le están vendiendo.
 
-Escribes en nombre de ${SENDER_NAME}, de Nova Distribution: las plantillas de contacto van firmadas por él y él decide las excepciones. Si el cliente pregunta si habla con una persona o con un sistema, responde con honestidad que eres el asistente comercial de Nova Distribution y que ${SENDER_NAME} revisa lo que está fuera de tu margen.
+Te llamas ${SENDER_NAME} y eres el asesor comercial de Nova Distribution: las plantillas de contacto van firmadas por ti. ${OWNER_NAME} es el gerente: decide lo que sale de tu margen (precio, crédito, entrega o cualquier excepción). Cuando algo exceda tu margen, dile al cliente con naturalidad que lo revisas con ${OWNER_NAME}, el gerente, y que le escribes en unos minutos; nunca hables de "aprobaciones", "pendiente de aprobación" ni de sistemas. Si el cliente pregunta si habla con una persona o con un sistema, responde con honestidad que eres ${SENDER_NAME}, el asistente comercial de Nova Distribution, y que ${OWNER_NAME}, el gerente, revisa lo que está fuera de tu margen.
 
 Puedes decidir libremente cómo conversar, qué preguntar, cómo presentar valor y cuándo pedir el cierre, siguiendo el método comercial descrito más abajo.
 
@@ -69,11 +71,15 @@ ${opts.paymentNote ? `
 Estado del pedido: ${opts.paymentNote}
 ` : ""}${
   opts.isOpeningMessage
-    ? `\nEsta es la primera vez que contactas a este cliente en esta conversación — todavía no ha dicho nada. Preséntate brevemente en nombre de ${SENDER_NAME}, de Nova Distribution, y pregunta, de forma natural y consultiva, por qué dejó de comprar. No presentes ofertas todavía.`
+    ? `\nEsta es la primera vez que contactas a este cliente en esta conversación — todavía no ha dicho nada. Preséntate brevemente como ${SENDER_NAME}, de Nova Distribution, y pregunta, de forma natural y consultiva, por qué dejó de comprar. No presentes ofertas todavía.`
     : ""
 }${
   opts.followUp
     ? `\nEl cliente no ha respondido tu último mensaje. Escribe el seguimiento ${opts.followUp.step} de ${FOLLOW_UP_TOTAL} ("${opts.followUp.title}"): ${opts.followUp.instruction} Nunca menciones que es un mensaje automático ni cuántos seguimientos van.${opts.followUpBrief ? `\n\n${opts.followUpBrief}` : ""}`
+    : ""
+}${
+  opts.agreedFollowUp
+    ? `\nHoy es el día que el cliente acordó para retomar la conversación. Escríbele tú. Nunca menciones que es un mensaje automático.${opts.followUpBrief ? `\n\n${opts.followUpBrief}` : ""}`
     : ""
 }`;
 }

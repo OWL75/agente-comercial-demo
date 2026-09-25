@@ -66,7 +66,7 @@ describe("template outreach delivery modes", () => {
         name: "apertura_recompra",
         params: ["Empresa Demo", "50", "Shampoo Professional 1L", "6"],
       }),
-    ).resolves.toContain("le escribe Abdiel de Nova Distribution");
+    ).resolves.toContain("le escribe Fernán de Nova Distribution");
 
     expect(sendWhatsAppTemplateMock).not.toHaveBeenCalled();
     expect(sendWhatsAppButtonsMock).toHaveBeenCalledWith(
@@ -93,7 +93,7 @@ describe("template outreach delivery modes", () => {
         name: "apertura_recompra",
         params: ["Empresa Demo", "50", "Shampoo Professional 1L", "6"],
       }),
-    ).resolves.toContain("le escribe Abdiel de Nova Distribution");
+    ).resolves.toContain("le escribe Fernán de Nova Distribution");
 
     expect(sendWhatsAppButtonsMock).toHaveBeenCalledOnce();
     expect(logAuditMock).toHaveBeenCalledWith(

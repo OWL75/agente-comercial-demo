@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asksForConfirmation, commercialReplyViolations, guardedFallback, mentionsSavingsAmount, onlyMatchesReference, presentsFinalVerifiedOffer, soundsPushy } from "./commercial-reply-guard";
+import { asksForConfirmation, hideStockCount, repeatsOfferList, revealsApproval, commercialReplyViolations, guardedFallback, mentionsSavingsAmount, onlyMatchesReference, presentsFinalVerifiedOffer, soundsPushy } from "./commercial-reply-guard";
 import type { VerifiedOfferResult } from "@/lib/tools/offers";
 
 const ready: VerifiedOfferResult = {
@@ -203,9 +203,34 @@ describe("real conversation 2026-09-25 16:57 UTC: \"no es gran diferencia\"", ()
     expect(soundsPushy("Le ofrezco $17.65 por unidad. ¿Le sirve así?")).toBe(false);
   });
 
-  it("falls back in usted, without a made-up manager", () => {
+  it("falls back in usted, naming the real manager", () => {
     for (const text of [guardedFallback(true), guardedFallback(false, true), guardedFallback(false)]) {
-      expect(text).not.toMatch(/\b(déjame|te|gerente)\b/i);
+      expect(text).not.toMatch(/\b(déjame|te)\b/i);
+      expect(text).not.toMatch(/\bmi gerente\b/i);
     }
+  });
+});
+
+describe("real conversation 2026-09-25 18:18 UTC: \"mañana en la tarde con mi socio\"", () => {
+  const approved: VerifiedOfferResult = { ...ready, netUnitPrice: 17.5, total: 875, discountPct: 5.4054 };
+  const LIST = "Ya lo consulté con Abdiel y aprobó el precio de *$17.50 por unidad*. Le dejo la propuesta:\n\n• *50 Shampoo Professional 1L*\n• Precio: *$17.50 por unidad*\n• Total: *$875.00*\n• Stock disponible: 820 unidades\n• Entrega: al día siguiente\n• Crédito: 30 días\n\n¿Se lo dejo listo?";
+  const RELIST = "Perfecto, consúltelo mañana por la tarde con su socio. La propuesta queda así:\n\n• *50 Shampoo Professional 1L*\n• *$17.50 por unidad* — total *$875*\n• Entrega al día siguiente\n• Crédito a 30 días\n\nQuedo atento a lo que decidan.";
+
+  it("never tells the customer how much inventory there is", () => {
+    expect(hideStockCount(LIST)).toContain("• Stock disponible\n");
+    expect(hideStockCount(LIST)).not.toContain("820");
+    expect(hideStockCount("Tenemos 820 unidades disponibles para usted.")).toBe("Tenemos stock disponible para usted.");
+  });
+
+  it("catches the third copy of the same offer list", () => {
+    expect(repeatsOfferList(RELIST, [LIST], approved)).toBe(true);
+    expect(repeatsOfferList("Perfecto, le escribo mañana después de las 2.", [LIST], approved)).toBe(false);
+    expect(repeatsOfferList(LIST, ["Hola, ¿cómo le ha ido?"], approved)).toBe(false);
+  });
+
+  it("does not tell the customer the manager approved it", () => {
+    expect(revealsApproval(LIST)).toBe(true);
+    expect(revealsApproval("Queda pendiente de aprobación.")).toBe(true);
+    expect(revealsApproval("Lo revisé con Abdiel, el gerente, y pude conseguirle $17.50 para este pedido.")).toBe(false);
   });
 });

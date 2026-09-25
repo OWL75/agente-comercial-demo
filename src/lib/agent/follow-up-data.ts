@@ -12,10 +12,28 @@ export async function loadFollowUpContext(conversationId: string): Promise<Follo
       condicion_solicitada, intencion_compra, resumen
     from agente_comercial.customer_insights where conversation_id = ${conversationId}
   `;
+  const [presented] = await sql`
+    select 1 from agente_comercial.audit_log
+    where conversation_id = ${conversationId} and category = 'policy_check' limit 1
+  `;
   return buildFollowUpContext(
     messages.map((m) => ({ sender: m.sender, body: m.body, createdAt: new Date(m.created_at) })),
     insight ? { ...insight, cantidad: insight.cantidad == null ? null : Number(insight.cantidad) } : null,
+    new Date(),
+    !!presented,
   );
+}
+
+export type FollowUpAgreement = { date: string; action: string | null };
+
+/** The moment the customer agreed to be contacted again, if any. */
+export async function loadAgreement(conversationId: string): Promise<FollowUpAgreement | null> {
+  const [row] = await sql<Array<{ date: string | null; action: string | null; outcome: string | null }>>`
+    select proxima_fecha::text as date, proxima_accion as action, resultado as outcome
+    from agente_comercial.customer_insights where conversation_id = ${conversationId}
+  `;
+  if (!row?.date || row.outcome !== "seguimiento_acordado") return null;
+  return { date: row.date, action: row.action };
 }
 
 /** Templates already sent in this conversation, from the audit trail. */

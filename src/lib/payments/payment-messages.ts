@@ -72,7 +72,7 @@ export function paymentReceivedText(p: PaymentSummary): string {
 
 export const PAYMENT_BUTTON = "Pagar pedido";
 
-export const PAYMENT_ISSUE_ACK = "Gracias por avisarme. Lo reviso con Abdiel y le escribo en breve para resolverlo.";
+export const PAYMENT_ISSUE_ACK = "Gracias por avisarme. Lo reviso con Abdiel, el gerente, y le escribo en breve para resolverlo.";
 
 // ---------------------------------------------------------------------------
 // Due-date reminders

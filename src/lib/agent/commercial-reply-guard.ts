@@ -1,9 +1,10 @@
 import type { VerifiedOfferResult } from "@/lib/tools/offers";
+import { OWNER_NAME } from "@/lib/channel/whatsapp-templates";
 
 const MONEY = /\$\s*(\d+(?:[.,]\d{1,2})?)/g;
 const PERCENT = /(\d+(?:[.,]\d+)?)\s*%/g;
 const COMPETITOR_REFERENCE = /\b(proveedor|competidor|referencia|pagas|pagan|te\s+(?:lo\s+)?deja|mencionaste|compartiste|actualmente)\b/i;
-const PENDING_LANGUAGE = /\b(pendiente|por confirmar|por validar|requiere (?:una )?aprobaci[oó]n|sujeto a aprobaci[oó]n|solicit[eé] (?:la )?aprobaci[oó]n)\b/i;
+const PENDING_LANGUAGE = /\b(pendiente|lo\s+reviso|lo\s+estoy\s+revisando|revisarlo\s+con|por confirmar|por validar|requiere (?:una )?aprobaci[oó]n|sujeto a aprobaci[oó]n|solicit[eé] (?:la )?aprobaci[oó]n)\b/i;
 // Both "tú" and "usted" forms: the agent writes in "usted" ("¿Confirma el pedido?").
 // Soft closes ("¿Le sirve así?", "¿Se lo dejo listo?") ask the same thing
 // without pressure, so a plain "sí" to them confirms the offer too.
@@ -157,7 +158,7 @@ export function presentsFinalVerifiedOffer(reply: string, offer: VerifiedOfferRe
 /** Only sent when a promise to come back is real: an approval or an owner question is open. */
 export function guardedFallback(hasPendingApproval: boolean, ownerConsulted = false): string {
   if (hasPendingApproval) {
-    return "Esa condición todavía requiere aprobación. Ya la estoy revisando y le escribo apenas tenga respuesta.";
+    return `Esa condición la estoy revisando con ${OWNER_NAME}, el gerente. Le escribo apenas tenga respuesta.`;
   }
   if (ownerConsulted) {
     return "Déjeme revisarlo bien y le escribo en unos minutos.";
@@ -206,4 +207,38 @@ const SAVINGS_AMOUNT = /\$\s*\d+(?:[.,]\d{1,2})?\s+(?:menos|de\s+ahorro)\b|\baho
 
 export function mentionsSavingsAmount(text: string): boolean {
   return SAVINGS_AMOUNT.test(text);
+}
+
+// "Stock disponible: 820 unidades" tells the customer (and a competitor)
+// our inventory and adds nothing: having stock for their order is the point.
+export function hideStockCount(text: string): string {
+  return text
+    .replace(/(stock\s+disponible)\s*:?\s*\*?\d[\d.,]*\s+unidades\*?/gi, "$1")
+    .replace(/\s*\(\s*\d[\d.,]*\s+unidades\s+disponibles\s*\)/gi, "")
+    .replace(/\b\d[\d.,]*\s+unidades\s+disponibles\b/gi, "stock disponible");
+}
+
+const BULLET = /^\s*[-*•]\s+/;
+
+function bulletCount(text: string): number {
+  return text.split("\n").filter((line) => BULLET.test(line)).length;
+}
+
+/**
+ * The reply lists again an offer already sent as a list (same unit price):
+ * the customer already has it, and a third copy reads like a quote machine.
+ */
+export function repeatsOfferList(reply: string, previousAgentMessages: string[], offer: VerifiedOfferResult | null): boolean {
+  if (!offer || bulletCount(reply) < 3) return false;
+  const price = offer.netUnitPrice;
+  const hasPrice = (text: string) => moneyValues(text).some((value) => sameMoney(value, price));
+  return hasPrice(reply) && previousAgentMessages.some((m) => bulletCount(m) >= 3 && hasPrice(m));
+}
+
+// "Abdiel aprobó el precio" tells the customer there was room to push.
+// A lookahead, not \b: in JS "aprobó" has no word boundary after the "ó".
+const REVEALS_APPROVAL = /\b(aprob[óo]|aprobad[oa]s?|autoriz[óo]|autorizad[oa]s?)(?![a-záéíóúñ])|\bpendiente\s+de\s+aprobaci[oó]n/i;
+
+export function revealsApproval(text: string): boolean {
+  return REVEALS_APPROVAL.test(text);
 }

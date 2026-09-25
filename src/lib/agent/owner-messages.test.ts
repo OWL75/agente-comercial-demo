@@ -92,7 +92,7 @@ describe("owner case on Telegram (real conversation 2026-09-25)", () => {
 
   it("gives the owner the case, not just the last message", () => {
     const text = formatCaseForOwner(ownerCase, { question: "¿Cómo sigo?", draft: "Borrador" });
-    expect(text).toContain("Distribuidora Belleza del Istmo: necesito tu criterio");
+    expect(text).toContain("Abdiel, necesito tu criterio con Distribuidora Belleza del Istmo");
     expect(text).toContain("Qué pasa: Considera que la diferencia");
     expect(text).toContain("Su proveedor actual: $17.75 c/u · entrega al día siguiente");
     expect(text).toContain("Le ofrecí: $17.65 c/u × 50 Shampoo Professional 1L = $882.50 (lista $18.50)");

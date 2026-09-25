@@ -4,6 +4,7 @@ import { sql, toJsonb } from "@/lib/db";
 import { getActivePolicy } from "@/lib/db/policies";
 import { uuidLike } from "@/lib/zod-helpers";
 import { evaluateDelivery, evaluateDiscount } from "@/lib/policy/evaluate";
+import { autonomyFloorUnitPrice } from "@/lib/policy/verified-offer";
 
 export const requestApprovalInput = z.object({
   conversationId: uuidLike,
@@ -68,6 +69,23 @@ export async function requestApproval(input: RequestApprovalInput) {
     if (input.type === "discount" &&
         evaluateDiscount(input.requestedPct!, policy.config.discount).decision !== "requires_approval") {
       throw new Error("Este descuento no requiere aprobación humana; usa la decisión de la política.");
+    }
+    // The owner's rule: the agent's own best price goes first. Asking the
+    // manager for less before the customer has even seen it gives margin away.
+    if (input.type === "discount" && product) {
+      const floor = autonomyFloorUnitPrice(product.unitPrice, policy.config.discount.autoMaxPct);
+      const [lastPresented] = await tx<Array<{ net: string | null }>>`
+        select payload->'offer'->>'netUnitPrice' as net from agente_comercial.audit_log
+        where conversation_id = ${input.conversationId} and category = 'policy_check'
+          and label = 'Oferta verificada presentada para confirmación'
+        order by created_at desc limit 1
+      `;
+      const lastOffered = lastPresented?.net == null ? null : Number(lastPresented.net);
+      if (lastOffered == null || lastOffered - floor > 0.004) {
+        throw new Error(
+          `Todavía no le ofreciste tu mejor precio. Antes de consultar al gerente, prepara con prepare_verified_offer la oferta a $${floor.toFixed(2)} por unidad (netUnitPrice) y preséntasela con la razón para quedarse con Nova. Solo si insiste en su precio, solicita la aprobación.`,
+        );
+      }
     }
     if (input.type === "delivery" && product &&
         evaluateDelivery(input.requestedDeliveryHours!, product.expressEligible, policy.config.delivery).decision !== "requires_approval") {

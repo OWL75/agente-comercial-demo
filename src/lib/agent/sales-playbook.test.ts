@@ -60,7 +60,7 @@ describe("sales playbook", () => {
     expect(prompt).toMatch(/Si el cliente no pide rebaja, sostén el precio de lista/);
     expect(prompt).toMatch(/Nunca ofrezcas por debajo de lo que pidió/);
     expect(prompt).toMatch(/Si su precio queda dentro de tu margen .* acéptalo tal cual/);
-    expect(prompt).toMatch(/Si pide por debajo de tu margen, no lo aceptes de una vez: ofrece tu mejor precio/);
+    expect(prompt).toMatch(/Si pide por debajo de tu margen, no lo aceptes de una vez: primero ofrece tu mejor precio/);
     expect(prompt).toMatch(/Solo si insiste en su precio, solicita la aprobación/);
     expect(prompt).toContain("netUnitPrice");
   });

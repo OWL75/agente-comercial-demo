@@ -15,14 +15,15 @@ import { commercialReplyViolations, guardedFallback, presentsFinalVerifiedOffer 
 import {
   FOLLOW_UP_ISSUE_EXPLANATIONS,
   followUpReplyIssues,
+  agreedFollowUpFocus,
   renderFollowUpBrief,
   type FollowUpContext,
 } from "@/lib/agent/follow-up-context";
-import { loadFollowUpContext } from "@/lib/agent/follow-up-data";
+import { loadFollowUpContext, type FollowUpAgreement } from "@/lib/agent/follow-up-data";
 import { askOwner } from "@/lib/agent/owner-notify";
 import { resolveProductRefs } from "@/lib/tools/catalog";
 import { isRepetition } from "@/lib/agent/follow-up-context";
-import { asksForConfirmation, asksPermissionToQuote, mentionsSavingsAmount, onlyMatchesReference, soundsPushy, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
+import { asksForConfirmation, asksPermissionToQuote, hideStockCount, mentionsSavingsAmount, onlyMatchesReference, repeatsOfferList, revealsApproval, soundsPushy, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
 import { announceOrderToOwner, pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { formatDateEs } from "@/lib/payments/payment-messages";
 
@@ -55,7 +56,13 @@ function unverifiedTermsNote(offer: VerifiedOfferResult | null): string {
   return `(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta tenía una cifra que no coincide con tu última oferta preparada, así que no se envió. Las únicas cifras que puedes escribir son: ${allowed}. Escríbela de nuevo con esas cifras (o sin cifras) y el mismo sentido; si quieres otra cifra, prepárala antes con prepare_verified_offer.`;
 }
 
-const PUSHY_NOTE = "(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta suena a vendedor insistente (urgencia, presión o \"¿Me confirma el pedido?\"). Escríbela de nuevo con las mismas condiciones, respondiendo a lo que el cliente dijo y cerrando con una pregunta suave que deje la decisión en sus manos, por ejemplo \"¿Le sirve así?\" o \"Si le parece, se lo dejo listo\".";
+const cleanReply = (text: string) => hideStockCount(stripZeroDiscount(toWhatsAppText(text)));
+
+const REPEATED_LIST_NOTE = "(Nota interna del sistema, nunca la menciones al cliente.) Ya le enviaste esa misma oferta en lista. No la repitas: si hace falta mencionarla, dilo en una frase de prosa y sigue con lo que el cliente necesita ahora.";
+
+const REVEALS_APPROVAL_NOTE = "(Nota interna del sistema, nunca la menciones al cliente.) No digas que el precio o la condición \"se aprobó\", \"se autorizó\" ni que está \"pendiente de aprobación\": suena a que hay más margen y a trámite interno. Di que lo revisas con Abdiel, el gerente, o, si ya está resuelto, que pudiste conseguirlo como condición especial para este pedido. Mismas cifras.";
+
+const PUSHY_NOTE ="(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta suena a vendedor insistente (urgencia, presión o \"¿Me confirma el pedido?\"). Escríbela de nuevo con las mismas condiciones, respondiendo a lo que el cliente dijo y cerrando con una pregunta suave que deje la decisión en sus manos, por ejemplo \"¿Le sirve así?\" o \"Si le parece, se lo dejo listo\".";
 
 type ConversationContext = {
   customerId: string;
@@ -217,7 +224,7 @@ async function executeAgentLoop(
 
   let response = await untilText(await client.responses.create({ model, instructions, input, tools }));
   if (!response) return "";
-  let reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
+  let reply = cleanReply(response.output_text ?? "");
   if (await isCustomerSuppressed(context.customerId)) return "";
 
   const hasPendingApproval = async () => {
@@ -253,7 +260,7 @@ async function executeAgentLoop(
       }]);
       response = await untilText(await client.responses.create({ model, instructions, input, tools }));
       if (!response) return "";
-      reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
+      reply = cleanReply(response.output_text ?? "");
       issues = review(reply);
       if (issues.length) {
         await logAudit({
@@ -283,7 +290,7 @@ async function executeAgentLoop(
     input = input.concat(response.output, [{ role: "user", content: unverifiedTermsNote(verifiedOffer) }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
-    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
+    reply = cleanReply(response.output_text ?? "");
     pendingApproval = await hasPendingApproval();
     violations = violationsOf(reply);
   }
@@ -301,7 +308,7 @@ async function executeAgentLoop(
     input = input.concat(response.output, [{ role: "user", content: REPETITION_NOTE(opts.customerMessage ?? "") }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
-    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
+    reply = cleanReply(response.output_text ?? "");
     pendingApproval = await hasPendingApproval();
     violations = violationsOf(reply);
   }
@@ -315,7 +322,7 @@ async function executeAgentLoop(
     }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
-    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
+    reply = cleanReply(response.output_text ?? "");
     pendingApproval = await hasPendingApproval();
     violations = violationsOf(reply);
   }
@@ -330,7 +337,7 @@ async function executeAgentLoop(
     }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
-    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
+    reply = cleanReply(response.output_text ?? "");
     pendingApproval = await hasPendingApproval();
     violations = violationsOf(reply);
   }
@@ -344,7 +351,7 @@ async function executeAgentLoop(
     }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
-    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
+    reply = cleanReply(response.output_text ?? "");
     pendingApproval = await hasPendingApproval();
     violations = violationsOf(reply);
   }
@@ -359,7 +366,7 @@ async function executeAgentLoop(
     }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
-    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
+    reply = cleanReply(response.output_text ?? "");
     pendingApproval = await hasPendingApproval();
     violations = violationsOf(reply);
   }
@@ -371,7 +378,7 @@ async function executeAgentLoop(
     input = input.concat(response.output, [{ role: "user", content: PUSHY_NOTE }]);
     const rewritten = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!rewritten) return "";
-    const calmer = stripZeroDiscount(toWhatsAppText(rewritten.output_text ?? ""));
+    const calmer = cleanReply(rewritten.output_text ?? "");
     pendingApproval = await hasPendingApproval();
     // Keep the original if the rewrite broke a commercial rule: pressure is
     // a tone problem, an unverified figure is a correctness one.
@@ -380,6 +387,32 @@ async function executeAgentLoop(
       reply = calmer;
     }
     violations = violationsOf(reply);
+  }
+
+  // Tone rewrites that must not trade a clean reply for a blocked one: each
+  // keeps the original if the rewrite breaks a commercial rule.
+  const toneRewrite = async (label: string, note: string) => {
+    await logAudit({ conversationId, category: "system", label, payload: { draft: reply } });
+    input = input.concat(response.output, [{ role: "user", content: note }]);
+    const rewritten = await untilText(await client.responses.create({ model, instructions, input, tools }));
+    if (!rewritten) return false;
+    const text = cleanReply(rewritten.output_text ?? "");
+    pendingApproval = await hasPendingApproval();
+    if (text && !violationsOf(text).length) {
+      response = rewritten;
+      reply = text;
+    }
+    violations = violationsOf(reply);
+    return true;
+  };
+  if (opts.trigger !== "opening" && !violations.length) {
+    const previousAgentMessages = (await sql<Array<{ body: string }>>`
+      select body from agente_comercial.messages where conversation_id = ${conversationId} and sender = 'agent'
+    `).map((m) => m.body);
+    if (repeatsOfferList(reply, previousAgentMessages, verifiedOffer) &&
+        !(await toneRewrite("Respuesta que repite la lista de la oferta: el agente la resume", REPEATED_LIST_NOTE))) return "";
+    if (!violations.length && revealsApproval(reply) &&
+        !(await toneRewrite("Respuesta que habla de aprobaciones: el agente la reescribe", REVEALS_APPROVAL_NOTE))) return "";
   }
 
   let presentedVerifiedOffer = false;
@@ -518,6 +551,22 @@ export async function sendFollowUp(conversationId: string, step: FollowUpStep): 
   return { reply };
 }
 
+/** The touch the customer asked for ("mañana en la tarde"): same review as any follow-up. */
+export async function sendAgreedFollowUp(conversationId: string, agreement: FollowUpAgreement): Promise<{ reply: string }> {
+  const context = await loadConversationContext(conversationId);
+  const history = await loadHistoryAsInput(conversationId);
+  const followUpContext = await loadFollowUpContext(conversationId);
+  const input = [...history, { role: "user" as const, content: "(llegó el momento acordado para retomar)" }];
+  const reply = await executeAgentLoop(conversationId, context, input, {
+    isOpeningMessage: false,
+    agreedFollowUp: true,
+    followUpBrief: renderFollowUpBrief(followUpContext, 1, agreedFollowUpFocus(agreement, followUpContext)),
+    followUpContext,
+    trigger: "follow_up",
+  });
+  return { reply };
+}
+
 /**
  * Runs after a human approves/modifies/rejects a pending approval (section
  * 6: "la conversación debe continuar automáticamente" after the decision).
@@ -534,7 +583,7 @@ export async function resumeAfterHumanDecision(
     ...history,
     {
       role: "system" as const,
-      content: `Un humano acaba de decidir sobre la aprobación pendiente: ${decisionSummary} El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo consultaste y refleja la decisión. Si quedó aprobada, verifica la oferta con prepare_verified_offer y, si queda ready, preséntala completa y pregúntale con naturalidad si se la deja lista; si fue rechazada, ofrece la mejor alternativa dentro de tu autonomía. El pedido solo puede crearse cuando el cliente responda confirmando. Actualiza la etapa con update_opportunity_stage si corresponde.`,
+      content: `Un humano acaba de decidir sobre la aprobación pendiente: ${decisionSummary} El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo revisaste con Abdiel, el gerente. Si quedó aprobada, verifica la oferta con prepare_verified_offer y, si queda ready, preséntala como una condición especial que pudiste conseguirle para este pedido (nunca digas que "se aprobó" ni que hubo margen), en lista una sola vez, y pregúntale con naturalidad si se la deja lista; si fue rechazada, ofrece la mejor alternativa dentro de tu autonomía. El pedido solo puede crearse cuando el cliente responda confirmando. Actualiza la etapa con update_opportunity_stage si corresponde.`,
     },
   ];
   const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" });
@@ -557,7 +606,7 @@ export async function resumeAfterOwnerAnswer(
     ...history,
     {
       role: "system" as const,
-      content: `Consultaste al dueño: "${question}". Su respuesta: "${answer}". El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo consultaste y sigue la conversación con esa indicación, sin presionar. Todo precio, descuento, crédito o entrega que menciones debe salir de prepare_verified_offer; si la indicación excede la política, las herramientas lo rechazarán y deberás ofrecer la mejor alternativa permitida. Nunca menciones al dueño por su nombre ni cites su mensaje literal.`,
+      content: `Consultaste al dueño: "${question}". Su respuesta: "${answer}". El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo revisaste con Abdiel, el gerente, y sigue la conversación con esa indicación, sin presionar. Todo precio, descuento, crédito o entrega que menciones debe salir de prepare_verified_offer; si la indicación excede la política, las herramientas lo rechazarán y deberás ofrecer la mejor alternativa permitida. No cites su mensaje literal ni digas que algo "se aprobó".`,
     },
   ];
   const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" });

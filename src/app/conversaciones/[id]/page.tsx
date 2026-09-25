@@ -18,7 +18,7 @@ import { FOLLOW_UP_STEPS } from "@/lib/agent/follow-up-sequence";
 import { PaymentReminderPanel } from "@/components/payment-reminder-panel";
 import { getPaymentReminderState } from "@/lib/payments/payments";
 import { formatDateEs, money } from "@/lib/payments/payment-messages";
-import { sendMessageAction, simulateNoReplyAction, simulatePaymentReminderAction } from "./actions";
+import { sendMessageAction, simulateAgreedFollowUpAction, simulateNoReplyAction, simulatePaymentReminderAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +78,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
   const closingStats = order ? await getConversationClosingStats(id) : null;
   const boundSendMessage = sendMessageAction.bind(null, id);
   const boundSimulateNoReply = simulateNoReplyAction.bind(null, id);
+  const boundSimulateAgreed = simulateAgreedFollowUpAction.bind(null, id);
   const boundSimulatePaymentReminder = simulatePaymentReminderAction.bind(null, id);
 
   return (
@@ -160,6 +161,8 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
               canSimulate={followUp.canSimulate}
               blockedReason={followUp.blockedReason}
               action={boundSimulateNoReply}
+              agreed={followUp.agreed}
+              agreedAction={boundSimulateAgreed}
             />
           </Panel>
         )}

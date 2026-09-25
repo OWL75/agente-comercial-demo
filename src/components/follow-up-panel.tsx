@@ -2,8 +2,9 @@
 
 import { useFormStatus } from "react-dom";
 import type { FollowUpStep } from "@/lib/agent/follow-up-sequence";
+import type { FollowUpAgreement } from "@/lib/agent/follow-up-data";
 
-function SimulateButton() {
+function SimulateButton({ label = "Simular que el cliente no responde" }: { label?: string }) {
   const { pending } = useFormStatus();
   return (
     <button
@@ -11,7 +12,7 @@ function SimulateButton() {
       disabled={pending}
       className="w-full rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-amber-400 disabled:cursor-wait disabled:opacity-70"
     >
-      {pending ? "El agente está redactando…" : "Simular que el cliente no responde"}
+      {pending ? "El agente está redactando…" : label}
     </button>
   );
 }
@@ -22,15 +23,28 @@ export function FollowUpPanel({
   canSimulate,
   blockedReason,
   action,
+  agreed,
+  agreedAction,
 }: {
   steps: readonly FollowUpStep[];
   sentCount: number;
   canSimulate: boolean;
   blockedReason: string | null;
   action: () => Promise<void>;
+  agreed: FollowUpAgreement | null;
+  agreedAction: () => Promise<void>;
 }) {
   return (
     <div className="space-y-3">
+      {agreed && (
+        <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+          <p className="text-xs font-medium text-emerald-300">Retomar lo acordado · {agreed.date}</p>
+          {agreed.action && <p className="text-[11px] leading-relaxed text-slate-300">{agreed.action}</p>}
+          <form action={agreedAction}>
+            <SimulateButton label="Simular que llegó el momento acordado" />
+          </form>
+        </div>
+      )}
       <ol className="space-y-2">
         {steps.map((s) => {
           const sent = s.step <= sentCount;

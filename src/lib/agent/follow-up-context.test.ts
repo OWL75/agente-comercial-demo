@@ -103,3 +103,16 @@ describe("approved-template choice when the 24 h window is closed", () => {
     expect(chooseFollowUpTemplate({ ...base, step: 3 })).toBe("seguimiento_cierre");
   });
 });
+
+describe("agreed follow-up (real conversation 2026-09-25: \"mañana en la tarde con mi socio\")", () => {
+  it("keeps the promise, helps the partner decide and leaves an easy way out", async () => {
+    const { agreedFollowUpFocus, buildFollowUpContext } = await import("@/lib/agent/follow-up-context");
+    const ctx = buildFollowUpContext([], null, new Date(), true);
+    const focus = agreedFollowUpFocus({ date: "2026-09-26", action: "Retomar en la tarde; lo decide con su socio" }, ctx);
+    expect(focus).toContain("2026-09-26");
+    expect(focus).toContain("lo decide con su socio");
+    expect(focus).toMatch(/resumen de tres líneas/);
+    expect(focus).toMatch(/pedido de prueba/);
+    expect(focus).toMatch(/No repitas la lista/);
+  });
+});

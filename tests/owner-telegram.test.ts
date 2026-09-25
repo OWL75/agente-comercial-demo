@@ -57,7 +57,7 @@ vi.mock("@/lib/agent/openai-client", () => ({
   }),
 }));
 
-import { database } from "./sql-harness";
+import { database, presentBestPrice } from "./sql-harness";
 import { runAgentTurn } from "@/lib/agent/runtime";
 import { handleTelegramUpdate } from "@/lib/agent/owner-telegram";
 import { ownerChatId } from "@/lib/agent/owner-notify";
@@ -172,6 +172,7 @@ describe("the real dead end: 'Déjame validar…' never came back", () => {
 });
 
 describe("approvals decided from Telegram", () => {
+  beforeEach(async () => { await presentBestPrice(conversationId, 200); });
   const eightPercentTurn = (reply = "Lo estoy consultando con mi gerente y te escribo en breve.") => [
     calls(
       tool("prepare_verified_offer", { sku: SKU, quantity: 200, discountPct: 8, deliveryHours: 48 }),
@@ -181,7 +182,7 @@ describe("approvals decided from Telegram", () => {
   ];
   const approvedOffer = () => [
     calls(tool("prepare_verified_offer", { sku: SKU, quantity: 200, discountPct: 8, deliveryHours: 48 }), tool("update_opportunity_stage", { stage: "closing" })),
-    say("Ya lo consulté y quedó aprobado: 200 unidades a $17.02 por unidad con 8%, total $3404.00 y entrega estándar. ¿Confirmas las 200 unidades?"),
+    say("Ya lo revisé con Abdiel y pude conseguirle 200 unidades a $17.02 por unidad con 8%, total $3404.00 y entrega estándar. ¿Le sirve así?"),
   ];
 
   it("sends the case with buttons and, on approve, writes the verified offer to the customer on its own", async () => {
@@ -199,7 +200,7 @@ describe("approvals decided from Telegram", () => {
     await tap(OWNER, `ap:${approval.id}:8`, request.messageId);
 
     expect(await approvals()).toEqual([expect.objectContaining({ status: "approved", decided_by: "Dueño (Telegram)", decided_value: { pct: 8 } })]);
-    expect((await agentMessages()).at(-1)).toMatch(/^Ya lo consulté y quedó aprobado/);
+    expect((await agentMessages()).at(-1)).toMatch(/^Ya lo revisé con Abdiel y pude conseguirle/);
     expect(h.closed).toEqual([request.messageId]);
     expect(h.telegram.at(-1)!.text).toMatch(/Aprobado 8% para Distribuidora Belleza del Istmo\. Ya le escribí al cliente/);
     expect((await database.query("select id from agente_comercial.orders")).rows).toHaveLength(0);
@@ -210,7 +211,7 @@ describe("approvals decided from Telegram", () => {
     h.script = [...eightPercentTurn(), ...eightPercentTurn("Perfecto, ya quedó en revisión; le aviso apenas tenga la respuesta.")];
     await runAgentTurn(conversationId, "Te compro 200 si me das 8%.");
     await runAgentTurn(conversationId, "Sí, es en firme el 8%.");
-    expect(h.telegram.filter((m) => m.text.startsWith("Necesito tu OK"))).toHaveLength(1);
+    expect(h.telegram.filter((m) => m.text.startsWith("Abdiel, necesito tu OK"))).toHaveLength(1);
   });
 
   it("lets the owner approve a different value by replying with a number", async () => {

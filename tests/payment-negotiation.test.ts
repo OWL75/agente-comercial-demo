@@ -283,7 +283,7 @@ describe("payment collection without a human", () => {
     const question = h.telegram.at(-1)!;
     expect(question.text).toContain("«Prefiero pagar con cheque a 45 días»");
     expect(question.markup).toMatchObject({ force_reply: true });
-    expect((await agentMessages()).at(-1)).toBe("Gracias por avisarme. Lo reviso con Abdiel y le escribo en breve para resolverlo.");
+    expect((await agentMessages()).at(-1)).toBe("Gracias por avisarme. Lo reviso con Abdiel, el gerente, y le escribo en breve para resolverlo.");
 
     h.script = [say("Ya lo consulté con Abdiel: podemos recibir su cheque, pero el plazo se mantiene en 30 días. ¿Le funciona así?")];
     await handleTelegramUpdate({

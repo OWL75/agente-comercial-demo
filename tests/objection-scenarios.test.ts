@@ -48,7 +48,7 @@ vi.mock("@/lib/agent/openai-client", () => ({
   }),
 }));
 
-import { database } from "./sql-harness";
+import { database, presentBestPrice } from "./sql-harness";
 import { runTracedConversation } from "@/lib/qa/trace";
 import { ADDITIONAL_OBJECTION_SCENARIOS, MAIN_OBJECTION_SCENARIO, type ObjectionScenario } from "@/lib/qa/objection-scenarios";
 import type { Check, ScenarioTrace } from "@/lib/qa/objection-checks";
@@ -340,6 +340,7 @@ describe("additional objection scenarios through the real runtime", () => {
 
   it("6. 8% discount: files a human approval, cannot order on the resume turn, orders after the customer confirms", async () => {
     const s = scenario("descuento-8");
+    await presentBestPrice(conversationId, 200);
     const trace = await play(s, [
       [calls(save({ productoInteres: "Shampoo Professional 1L", cantidad: 200, condicionSolicitada: "8% de descuento" }),
         tool("get_product_price", { sku: SKU }), tool("get_inventory", { sku: SKU }), tool("get_discount_policy", { requestedPct: 8 })),
@@ -497,7 +498,7 @@ describe("regression: exact Empresa Demo price and delivery conversation", () =>
       { tool: "create_sandbox_order", error: expect.stringContaining("duda") },
       { tool: "update_opportunity_stage", error: expect.stringContaining("awaiting_approval") },
     ]));
-    expect(conditional.reply).toContain("todavía requiere aprobación");
+    expect(conditional.reply).toContain("la estoy revisando con Abdiel, el gerente");
 
     const { rows: [approval] } = await database.query<{ id: string }>(
       "select id from agente_comercial.approvals where type='delivery' and status='pending'",
@@ -507,7 +508,7 @@ describe("regression: exact Empresa Demo price and delivery conversation", () =>
         tool("prepare_verified_offer", { sku: SKU, quantity: 50, discountPct: 4, deliveryHours: 24 }),
         stage("closing", "Obtener una confirmación explícita nueva"),
       ),
-      say("La entrega en 24 horas fue aprobada. Oferta final:\n\n* 50 unidades\n* 4% de descuento\n* $17.76 por unidad\n* Total $888.00\n* Pago a 30 días\n\n¿Confirmas el pedido con estas condiciones?"),
+      say("Ya lo revisé con Abdiel y pude conseguirle la entrega en 24 horas. Oferta final:\n\n* 50 unidades\n* 4% de descuento\n* $17.76 por unidad\n* Total $888.00\n* Pago a 30 días\n\n¿Confirmas el pedido con estas condiciones?"),
     ];
     await decideApproval(approval.id, "approve");
     expect((await database.query("select id from agente_comercial.orders")).rows).toHaveLength(0);
@@ -523,7 +524,7 @@ describe("regression: exact Empresa Demo price and delivery conversation", () =>
         items: [{ sku: SKU, quantity: 50 }], discountPct: 4,
         creditTerms: "30 días", deliveryHours: 24,
       })),
-      say("Listo, pedido registrado con entrega aprobada en 24 horas."),
+      say("Listo, pedido registrado con entrega en 24 horas."),
     ];
     await runAgentTurn(conversationId, "De acuerdo. Confirmo las 50 unidades con esas condiciones.");
     expect((await database.query(

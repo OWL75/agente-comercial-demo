@@ -11,7 +11,7 @@ vi.mock("@/lib/agent/runtime", () => ({
   startConversation: vi.fn().mockResolvedValue({ reply: "Hola" }),
 }));
 
-import { database } from "./sql-harness";
+import { database, presentBestPrice } from "./sql-harness";
 import { createSandboxOrder } from "@/lib/tools/orders";
 import { requestApproval, getApprovalResult } from "@/lib/tools/approvals";
 import { saveCustomerInsight } from "@/lib/tools/customer";
@@ -115,7 +115,15 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
       await database.exec("alter table agente_comercial.order_items drop constraint test_failure");
     }
   });
+  it("asks the manager for a discount only after the agent offered its own best price", async () => {
+    await expect(requestApproval(request())).rejects.toThrow("mejor precio");
+    await presentBestPrice(conversationId, 200, 17.65);
+    await expect(requestApproval(request())).rejects.toThrow("$17.58");
+    await presentBestPrice(conversationId, 200);
+    await expect(requestApproval(request())).resolves.toMatchObject({ approvalId: expect.any(String) });
+  });
   it("creates and reuses a pending approval, then accepts the exact approved order", async () => {
+    await presentBestPrice(conversationId, 200);
     const first = await requestApproval(request());
     const second = await requestApproval(request());
     expect(second.approvalId).toBe(first.approvalId);
@@ -125,6 +133,7 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
     expect((await createSandboxOrder({ ...order(), discountPct: 8 })).total).toBe(3404);
   });
   it("does not accept an approval for another quantity", async () => {
+    await presentBestPrice(conversationId, 200);
     const approval = await requestApproval(request());
     await decideApproval(approval.approvalId, "approve");
     const changed = { ...order(), discountPct: 8, items: [{ sku: "CAP-001", quantity: 201 }] };
@@ -133,6 +142,7 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
   });
   it("does not approve out-of-policy modifications or requests", async () => {
     await expect(requestApproval({ ...request(), requestedPct: 15 })).rejects.toThrow("política");
+    await presentBestPrice(conversationId, 200);
     const approval = await requestApproval(request());
     await expect(decideApproval(approval.approvalId, "modify", 15)).rejects.toThrow("política");
     expect((await getApprovalResult({ approvalId: approval.approvalId, conversationId })).status).toBe("pending");
@@ -146,6 +156,7 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
     })).rejects.toThrow("no requiere aprobación");
   });
   it("does not leak approval results across conversations", async () => {
+    await presentBestPrice(conversationId, 200);
     const approval = await requestApproval(request());
     await expect(getApprovalResult({ approvalId: approval.approvalId, conversationId: opportunityId })).rejects.toThrow("no encontrada");
   });

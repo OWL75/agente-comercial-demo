@@ -40,3 +40,15 @@ export function sqlFor(client: Client) {
 }
 
 export const sql = sqlFor(database);
+
+/**
+ * Records that the agent already presented its own best price (the floor),
+ * which request_approval requires before asking the manager for a discount.
+ */
+export async function presentBestPrice(conversationId: string, quantity: number, netUnitPrice = 17.58): Promise<void> {
+  await database.query(
+    `insert into agente_comercial.audit_log (conversation_id, category, label, payload)
+     values ($1, 'policy_check', 'Oferta verificada presentada para confirmación', $2)`,
+    [conversationId, JSON.stringify({ offer: { status: "ready", sku: "CAP-001", quantity, netUnitPrice, deliveryHours: 48 } })],
+  );
+}

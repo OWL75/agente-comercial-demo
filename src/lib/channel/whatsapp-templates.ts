@@ -44,8 +44,11 @@ export const PAYMENT_FOOTER = "Si necesita pagar de otra forma, respóndame aqu�
 /** Label and path of the payment button shared by every payment template. */
 export const PAYMENT_LINK_BUTTON = { text: "Pagar pedido", pathPrefix: "/pagar/", example: "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6" } as const;
 
-/** Who signs the outreach. Written on his behalf; he decides exceptions on Telegram. */
-export const SENDER_NAME = "Abdiel";
+/** The agent's name: it signs the outreach and talks to the customer. */
+export const SENDER_NAME = "Fernán";
+
+/** The manager who gets the agent's questions on Telegram and decides exceptions. */
+export const OWNER_NAME = "Abdiel";
 
 /** Meta asks for clear opt-out instructions in marketing messages; "BAJA" is honored by the webhook. */
 export const OPT_OUT_FOOTER = "Si no desea más mensajes, responda BAJA.";

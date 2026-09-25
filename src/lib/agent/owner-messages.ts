@@ -4,6 +4,7 @@
  * Markdown), so customer names or quotes can never break the formatting.
  */
 import { quoteByNetPrice, quoteMoney } from "@/lib/policy/verified-offer";
+import { OWNER_NAME } from "@/lib/channel/whatsapp-templates";
 
 const pctLabel = (pct: number) => `${Number(pct.toFixed(2))}%`;
 
@@ -94,7 +95,7 @@ export function approvalValueLabel(type: string, value: number): string {
 }
 
 export function formatApprovalForOwner(a: ApprovalForOwner): string {
-  const lines = [`Necesito tu OK para ${a.customerName}`, "", `Pide: ${requestLine(a)}`];
+  const lines = [`${OWNER_NAME}, necesito tu OK para ${a.customerName}`, "", `Pide: ${requestLine(a)}`];
   const { unitPrice, stockAvailable, creditAvailable, autonomyMaxPct } = a.context;
   const qty = a.requestedValue.quantity;
   if (a.type === "discount" && unitPrice && qty && typeof a.requestedValue.pct === "number") {
@@ -167,7 +168,7 @@ export function suggestNextMove(c: Pick<OwnerCase, "lastOffer" | "floorUnitPrice
 }
 
 export function formatCaseForOwner(c: OwnerCase, ask: { question: string; draft?: string | null }): string {
-  const lines = [`${c.customerName}: necesito tu criterio`, "", ask.question];
+  const lines = [`${OWNER_NAME}, necesito tu criterio con ${c.customerName}`, "", ask.question];
 
   const situation = [
     c.objection ? `Qué pasa: ${objectionDetail(c.objection)}` : null,

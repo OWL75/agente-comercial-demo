@@ -87,7 +87,7 @@ describe("outreach templates follow the commercial style", () => {
 describe("renderTemplate", () => {
   it("fills placeholders in order with the customer's real last order", () => {
     expect(renderTemplate("apertura_recompra", ["Distribuidora Belleza del Istmo", "50", "Shampoo Professional 1L", "6"])).toBe(
-      "Hola, le escribe Abdiel de Nova Distribution. El último pedido de Distribuidora Belleza del Istmo fue de 50 unidades de Shampoo Professional 1L, hace 6 semanas. ¿Le preparo la misma cantidad para esta semana?",
+      "Hola, le escribe Fernán de Nova Distribution. El último pedido de Distribuidora Belleza del Istmo fue de 50 unidades de Shampoo Professional 1L, hace 6 semanas. ¿Le preparo la misma cantidad para esta semana?",
     );
   });
 

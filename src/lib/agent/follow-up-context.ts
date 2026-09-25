@@ -36,12 +36,15 @@ export type FollowUpContext = {
   known: Array<{ label: string; value: string }>;
   objectionTypes: string[];
   quantityKnown: boolean;
+  /** An offer was already presented to the customer (from the audit trail). */
+  offerPresented: boolean;
 };
 
 export function buildFollowUpContext(
   messages: FollowUpMessage[],
   insight: FollowUpInsight | null,
   now: Date = new Date(),
+  offerPresented = false,
 ): FollowUpContext {
   const lastCustomerIndex = messages.map((m) => m.sender).lastIndexOf("customer");
   const lastCustomer = lastCustomerIndex >= 0 ? messages[lastCustomerIndex] : null;
@@ -72,6 +75,7 @@ export function buildFollowUpContext(
     known,
     objectionTypes: objectionTypesOf(insight?.objecion),
     quantityKnown: typeof insight?.cantidad === "number" && insight.cantidad > 0,
+    offerPresented,
   };
 }
 
@@ -98,6 +102,9 @@ function objectionFocus(ctx: FollowUpContext): string {
   const types = ctx.objectionTypes;
   if (types.includes("servicio") || types.includes("confianza")) {
     return "Su preocupación es el cumplimiento. Consulta get_inventory y get_delivery_options del producto y aporta lo que hoy puedes verificar (disponibilidad, si califica para entrega express) sin prometer más de lo que devuelven. Propón un paso de bajo riesgo, como un pedido de prueba pequeño, solo si mostró algo de interés.";
+  }
+  if (types.includes("precio") && ctx.offerPresented) {
+    return "Ya le presentaste una oferta. No la des por perdida ni te retires (\"dejemos abierta la opción\"), y no le ofrezcas \"prepararle\" una comparación que ya tiene. Recuérdale en una frase lo que gana con Nova que más responde a su caso (por ejemplo, pagar a 30 días en vez de contado) y deja un paso fácil: que le sirva así, o un pedido de prueba más pequeño si le preocupa cambiar.";
   }
   if (types.includes("precio")) {
     return ctx.quantityKnown
@@ -133,7 +140,23 @@ export function followUpFocus(ctx: FollowUpContext, step: number): string {
   return "Cambia de ángulo sin repetir los anteriores: un pedido de prueba de bajo riesgo si mostró interés, la persona que decide las compras, o el momento de su próxima reposición. Una sola propuesta.";
 }
 
-export function renderFollowUpBrief(ctx: FollowUpContext, step: number): string {
+/**
+ * The customer set the moment ("mañana en la tarde, con mi socio"): this
+ * touch keeps that promise. It is not a reminder of silence but the
+ * conversation they asked for, so it goes straight to their decision.
+ */
+export function agreedFollowUpFocus(agreement: { date: string; action: string | null }, ctx: FollowUpContext): string {
+  return [
+    `El cliente acordó que lo retomaras hoy (${agreement.date})${agreement.action ? `: ${agreement.action}` : ""}.`,
+    "Escríbele como quien cumple lo acordado, en dos o tres líneas: saluda según la hora, retoma en una frase lo que iba a hacer (por ejemplo \"¿Pudo verlo con su socio?\") y hazle fácil responder.",
+    ctx.offerPresented
+      ? "Si quien decide no ha visto la propuesta, ofrece el resumen de tres líneas en prosa para reenviar (producto y cantidad, precio y total, entrega y forma de pago, y la razón principal para Nova); cualquier cifra sale de prepare_verified_offer. No repitas la lista completa."
+      : "Si hace falta una propuesta, prepárala con prepare_verified_offer antes de dar cifras.",
+    "Deja una salida sencilla para cada caso: si les sirve, se lo dejas listo; si tienen una duda, la resuelves; si prefieren empezar con menos, un pedido de prueba más pequeño. Sin presión ni plazos inventados.",
+  ].join(" ");
+}
+
+export function renderFollowUpBrief(ctx: FollowUpContext, step: number, focus: string = followUpFocus(ctx, step)): string {
   const quote = (text: string) => `«${text.replace(/\s+/g, " ").trim()}»`;
   const lines: string[] = [];
   if (ctx.customerReplied && ctx.lastCustomerMessage) {
@@ -156,7 +179,7 @@ export function renderFollowUpBrief(ctx: FollowUpContext, step: number): string 
   return `Contexto del seguimiento:
 ${lines.join("\n")}
 
-Enfoque de este seguimiento: ${followUpFocus(ctx, step)}
+Enfoque de este seguimiento: ${focus}
 
 Cómo escribe un buen vendedor un seguimiento:
 - Menciona un detalle concreto de lo que conversaron, para que se note que recuerdas su caso.
