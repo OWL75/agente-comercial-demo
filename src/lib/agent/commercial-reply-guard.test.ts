@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commercialReplyViolations, presentsFinalVerifiedOffer } from "./commercial-reply-guard";
+import { commercialReplyViolations, onlyMatchesReference, presentsFinalVerifiedOffer } from "./commercial-reply-guard";
 import type { VerifiedOfferResult } from "@/lib/tools/offers";
 
 const ready: VerifiedOfferResult = {
@@ -137,5 +137,29 @@ describe("asking permission to quote", () => {
     expect(asksPermissionToQuote("Para compararle en esas mismas condiciones, ¿le cotizo las 50 unidades de su último pedido?")).toBe(true);
     expect(asksPermissionToQuote("¿Quiere que le cotice el pedido de siempre?")).toBe(true);
     expect(asksPermissionToQuote("Le puedo igualar ese precio: 50 unidades a $17.75. ¿Se lo preparo?")).toBe(false);
+  });
+});
+
+describe("real conversation 2026-09-25 01:44 UTC: beating the competitor, not matching it", () => {
+  const negotiation = {
+    customerAskUnitPrice: null, lastOfferedUnitPrice: null, autonomyFloorUnitPrice: 17.58, referenceUnitPrice: 17.75,
+    askWithinAutonomy: null, recommendedUnitPrice: 17.65, recommendationBasis: "beat_reference" as const,
+  };
+  const matched: VerifiedOfferResult = { ...ready, netUnitPrice: 17.75, total: 887.5, discountPct: 4.0541, negotiation: { ...negotiation, savingsVsReference: null } };
+  const beaten: VerifiedOfferResult = { ...ready, netUnitPrice: 17.65, total: 882.5, discountPct: 4.5946, negotiation: { ...negotiation, savingsVsReference: { perUnit: 0.1, total: 5 } } };
+
+  it("flags an offer that only matches the competitor while there is margin to beat it", () => {
+    expect(onlyMatchesReference("Puedo igualar el precio: 50 unidades a $17.75 por unidad, total $887.50. ¿Me confirma que lo prepare?", matched)).toBe(true);
+    expect(onlyMatchesReference("Le ofrezco $17.65 por unidad, total $882.50. ¿Me confirma el pedido?", beaten)).toBe(false);
+  });
+
+  it("does not flag the customer's own price accepted as is", () => {
+    const asked: VerifiedOfferResult = { ...matched, negotiation: { ...matched.negotiation!, customerAskUnitPrice: 17.75, recommendedUnitPrice: 17.75, recommendationBasis: "ask" } };
+    expect(onlyMatchesReference("Perfecto, se lo dejo en $17.75 por unidad, total $887.50. ¿Me confirma el pedido?", asked)).toBe(false);
+  });
+
+  it("lets the agent state the saving and the competitor price it beats, nothing else", () => {
+    expect(violations("Le ofrezco $17.65 por unidad en vez de $17.75, son $5.00 menos en su pedido: total $882.50. ¿Me confirma el pedido?", beaten)).toEqual([]);
+    expect(violations("Le ofrezco $17.65 por unidad, son $9.00 menos en su pedido: total $882.50. ¿Me confirma el pedido?", beaten)).toContain("offer_money_mismatch");
   });
 });

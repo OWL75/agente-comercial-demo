@@ -101,3 +101,14 @@ El cliente dijo que su proveedor le cobraba $17.75 y el agente igualó ese preci
   3. Por debajo del piso (`at_floor`), la decisión es del dueño, con aprobación por Telegram.
 - **La regla del "descuento natural"**, que evita dar un porcentaje mayor al necesario para alcanzar la referencia, solo aplica antes de la primera oferta. Una vez hay una oferta presentada y el cliente pide más, ceder es parte de la negociación.
 - **Lenguaje interno.** Palabras como "recuperar su pedido" o "condiciones verificadas" hacen que la respuesta se reescriba una vez antes de enviarse.
+
+## Mejorar al competidor y decir la diferencia (conversación 2026-09-25 01:44 UTC)
+
+El agente ofreció "Puedo igualar el precio y la entrega: $17.75 por unidad". El cliente respondió "Creo que me estás ofreciendo lo mismo, además ya tengo contrato con ellos" y el agente se retiró. Igualar no le da al cliente ninguna razón para cambiar, y el agente no dijo qué gana con Nova.
+
+- **Primera oferta frente al competidor (`beat_reference`).** Con el precio de su proveedor conocido, la recomendación es 10 centavos menos, redondeado a 5 centavos: de $17.75 a **$17.65**, si queda por encima del piso; si no, el piso de $17.58. Si el cliente vuelve a pedir: $17.58; luego, el dueño por Telegram.
+- **Ahorro concreto.** `negotiation.savingsVsReference` trae el ahorro por unidad y total (50 × $0.10 = $5.00) para decirlo en cifras. El guard acepta en la oferta el precio del competidor y ese ahorro, y ninguna otra cifra nueva.
+- **Control determinístico.** Si el agente presenta una oferta al mismo precio del competidor teniendo margen para mejorarlo, la respuesta se reescribe una vez antes de enviarse. No aplica cuando el cliente pidió ese precio explícitamente: su propio precio se acepta tal cual.
+- **Propuesta de valor (`get_value_proposition`).** Devuelve solo datos verificables del cliente (crédito disponible y plazo, stock para su pedido habitual, entrega al día siguiente si el producto califica, historial con Nova) y las ventajas aprobadas de la empresa en `src/lib/agent/company-profile.ts`. El agente usa una o dos que respondan a lo que el cliente valora y nunca afirma ventajas que no estén ahí. **Las ventajas de la empresa son valores de demo: el dueño debe confirmarlas o editarlas antes de un piloto real.**
+- **"Ya tengo contrato".** Nueva guía de objeción: preguntar si es exclusivo o tiene volumen mínimo; si no es exclusivo, proponer ser proveedor de respaldo o un pedido de prueba pequeño; si es exclusivo, respetarlo, preguntar cuándo vence y dejar el seguimiento para esa fecha. Nunca sugerir incumplirlo.
+- **"Me ofreces lo mismo".** No repetir la oferta: mejorar un paso y explicar en una frase la diferencia concreta.

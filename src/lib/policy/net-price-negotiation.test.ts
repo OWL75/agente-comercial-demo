@@ -42,8 +42,18 @@ describe("next concession", () => {
 });
 
 describe("first offer once the competitor's price is known", () => {
-  it("real case 21:16 UTC: competitor at $17.75, nothing offered yet → match $17.75", () => {
-    expect(nextConcession({ ...base, lastOffered: null, ask: null, reference: 17.75 })).toEqual({ unitPrice: 17.75, basis: "match_reference", withinAutonomy: true });
+  it("real case 01:44 UTC: competitor at $17.75 → beat it at $17.65, not the same price", () => {
+    expect(nextConcession({ ...base, lastOffered: null, ask: null, reference: 17.75 })).toEqual({ unitPrice: 17.65, basis: "beat_reference", withinAutonomy: true });
+  });
+
+  it("a reference just above the floor goes straight to the best price", () => {
+    expect(nextConcession({ ...base, lastOffered: null, ask: null, reference: 17.65 })).toEqual({ unitPrice: 17.58, basis: "floor", withinAutonomy: true });
+  });
+
+  it("ladder after beating the competitor: $17.65 → $17.58 → the owner", () => {
+    const second = nextConcession({ ...base, lastOffered: 17.65, ask: null, reference: 17.75 });
+    expect(second).toEqual({ unitPrice: 17.58, basis: "floor", withinAutonomy: true });
+    expect(nextConcession({ ...base, lastOffered: 17.58, ask: null, reference: 17.75 })).toEqual({ unitPrice: 17.58, basis: "at_floor", withinAutonomy: false });
   });
 
   it("a reference below the floor gets the best price, and one above list is ignored", () => {
@@ -51,7 +61,7 @@ describe("first offer once the competitor's price is known", () => {
     expect(nextConcession({ ...base, lastOffered: null, ask: null, reference: 19 })).toEqual({ unitPrice: 18, basis: "step", withinAutonomy: true });
   });
 
-  it("after the match, a request for a better price still steps down", () => {
+  it("after a matched offer (older conversations), a request for a better price still steps down", () => {
     expect(nextConcession({ ...base, lastOffered: 17.75, ask: null, reference: 17.75 })).toEqual({ unitPrice: 17.65, basis: "step", withinAutonomy: true });
   });
 });

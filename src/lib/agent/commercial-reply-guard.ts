@@ -103,6 +103,11 @@ export function commercialReplyViolations(args: {
     verifiedOffer.netUnitPrice,
     verifiedOffer.subtotal,
     verifiedOffer.total,
+    // The saving against the competitor's price ("$5.00 menos") and that price itself.
+    ...(verifiedOffer.negotiation?.referenceUnitPrice != null ? [verifiedOffer.negotiation.referenceUnitPrice] : []),
+    ...(verifiedOffer.negotiation?.savingsVsReference
+      ? [verifiedOffer.negotiation.savingsVsReference.perUnit, verifiedOffer.negotiation.savingsVsReference.total]
+      : []),
   ];
   if (ownMoney.some((value) => !allowedMoney.some((allowed) => sameMoney(value, allowed)))) {
     violations.push("offer_money_mismatch");
@@ -162,4 +167,16 @@ const PERMISSION_TO_QUOTE = /¿[^?]*\b(?:le|te)\s+(?:cotizo|coticemos|preparo\s+
 
 export function asksPermissionToQuote(text: string): boolean {
   return PERMISSION_TO_QUOTE.test(text);
+}
+
+/**
+ * The offer presented is just the competitor's price while there is margin
+ * to improve it: the customer sees no reason to switch ("me ofreces lo mismo").
+ * Only for a first offer against a known reference, not for an accepted ask.
+ */
+export function onlyMatchesReference(reply: string, offer: VerifiedOfferResult | null): boolean {
+  const n = offer?.negotiation;
+  if (!offer || offer.status !== "ready" || !n || n.referenceUnitPrice == null || n.customerAskUnitPrice != null) return false;
+  if (n.recommendedUnitPrice == null || n.recommendedUnitPrice >= offer.netUnitPrice) return false;
+  return sameMoney(offer.netUnitPrice, n.referenceUnitPrice) && presentsFinalVerifiedOffer(reply, offer);
 }

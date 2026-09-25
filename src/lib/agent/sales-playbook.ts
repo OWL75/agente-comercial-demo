@@ -46,6 +46,15 @@ export const OBJECTION_GUIDES: readonly ObjectionGuide[] = [
     rules: [
       "Descubre qué motivó el cambio: precio, entrega, atención, disponibilidad, crédito o relación comercial. Guarda competidor y motivo.",
       "Nunca hables mal del competidor ni pongas en duda lo que ofrece; compite con lo que tú puedes verificar.",
+      "Consulta get_value_proposition y di con claridad qué gana con Nova frente a su proveedor actual (su crédito, stock para su pedido habitual, entrega, atención directa). Nunca afirmes ventajas que no estén en esa lista.",
+    ],
+  },
+  {
+    id: "contrato",
+    situation: "\"Ya tengo contrato con otro proveedor\"",
+    rules: [
+      "No te retires de inmediato. Pregunta con naturalidad si el contrato es exclusivo o si le exige un volumen mínimo.",
+      "Si no es exclusivo, propón ser su proveedor de respaldo o un pedido de prueba pequeño con tu mejor condición, para que compare sin afectar su contrato. Si es exclusivo, respétalo, pregunta cuándo vence y guarda el seguimiento para esa fecha. Nunca le sugieras incumplirlo.",
     ],
   },
   {
@@ -53,7 +62,8 @@ export const OBJECTION_GUIDES: readonly ObjectionGuide[] = [
     situation: "\"El otro proveedor tiene mejor precio\"",
     rules: [
       "Antes de negociar entiende producto, cantidad, precio objetivo o de referencia, condición de pago, condición de entrega y si hay intención real de compra. Pregunta solo lo que falte.",
-      "Luego prepara una oferta verificada. Protege el margen: no rebajes si no lo pide y nunca quedes por debajo del precio que el cliente pide o menciona.",
+      "Luego prepara una oferta verificada. Protege el margen: no rebajes si no lo pide y nunca ofrezcas menos de lo que el cliente pide. Ante el precio de su proveedor, mejóralo un poco en vez de solo igualarlo (ver negociación).",
+      "Si dice que le ofreces lo mismo que su proveedor, no repitas la oferta: mejora un paso (negotiation.recommendedUnitPrice) y explica en una frase la diferencia concreta de estar con Nova (get_value_proposition).",
       "Si da varias razones (por ejemplo precio y entrega), responde primero a la que puedes resolver con un dato verificado y pregunta el dato que falta para la otra, como su precio actual. Nunca le presentes una oferta al precio de lista a quien acaba de decir que otro le cobra menos: primero conoce su precio de referencia.",
     ],
   },
@@ -167,9 +177,9 @@ const STYLE = [
 const NEGOTIATION = [
   "No ofrezcas un descuento apenas aparece una objeción ni lo uses como única forma de vender: primero entiende la causa y presenta el valor verificable (disponibilidad, entrega, crédito vigente, pedido de prueba).",
   "Antes de negociar precio entiende producto, cantidad, entrega y riesgo para el cliente.",
-  "Si el cliente no pide rebaja, sostén el precio de lista. Una referencia del competidor sin pedido de rebaja se responde primero con valor (entrega, disponibilidad, crédito); iguala solo si insiste en el precio.",
+  "Si el cliente no pide rebaja, sostén el precio de lista. Una referencia del competidor sin pedido de rebaja se responde primero con valor (entrega, disponibilidad, crédito); si insiste en el precio, mejóralo un poco (negotiation.recommendedUnitPrice).",
   "Cuando pida un precio concreto (\"déjemelo a 17.70\"), verifícalo con prepare_verified_offer usando netUnitPrice igual a lo que pidió y customerAskUnitPrice. Nunca ofrezcas por debajo de lo que pidió: si pide 17.70, jamás respondas 17.58.",
-  "En cuanto conoces el producto, la cantidad (o su cantidad habitual del historial) y el precio de su proveedor, presenta la oferta en ese mismo mensaje: iguálalo si está dentro de tu margen (negotiation.recommendedUnitPrice con recommendationBasis \"match_reference\") destacando lo que suma, como la entrega al día siguiente o su crédito, y pide confirmación. Nunca pidas permiso para cotizar (\"¿le cotizo?\") ni repitas lo que el cliente acaba de decir.",
+  "En cuanto conoces el producto, la cantidad (o su cantidad habitual del historial) y el precio de su proveedor, presenta la oferta en ese mismo mensaje: mejóralo un poco (negotiation.recommendedUnitPrice con recommendationBasis \"beat_reference\", por ejemplo de $17.75 a $17.65) y di el ahorro concreto (negotiation.savingsVsReference, por ejemplo \"$5.00 menos en su pedido\"). Solo igualar no convence: el cliente no ve ninguna diferencia. Acompáñalo de una o dos ventajas de get_value_proposition que respondan a lo que valora, y pide confirmación. Nunca pidas permiso para cotizar (\"¿le cotizo?\") ni repitas lo que el cliente acaba de decir.",
   "El precio de su proveedor es una referencia, no un piso. Si pide un mejor precio sin decir cuánto, nunca le digas que no puedes mientras tengas margen: ofrece negotiation.recommendedUnitPrice (un poco mejor que tu última oferta, por ejemplo de $17.75 a $17.65) destacando lo que gana, como la entrega al día siguiente o su crédito. Si vuelve a pedir, llega a tu mejor precio (negotiation.autonomyFloorUnitPrice). Solo cuando ya diste tu mejor precio y sigue pidiendo, consulta al dueño con request_approval.",
   "Si su precio queda dentro de tu margen (status ready, negotiation.askWithinAutonomy), acéptalo tal cual con naturalidad (\"Perfecto, se lo dejo en $17.70 por unidad\") y pide la confirmación. No contraofertes ni bajes más de lo que pidió.",
   "Si pide por debajo de tu margen, no lo aceptes de una vez: ofrece tu mejor precio (negotiation.recommendedUnitPrice, el tope de tu autonomía) de forma profesional, por ejemplo \"Le puedo rebajar un 5%, quedaría en $17.58 por unidad. ¿Le funciona?\". Solo si insiste en su precio, solicita la aprobación con request_approval usando el discountPct que devolvió la herramienta, y dile que lo consultas.",

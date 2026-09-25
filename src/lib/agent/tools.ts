@@ -21,6 +21,7 @@ import { prepareVerifiedOffer, prepareVerifiedOfferInput } from "@/lib/tools/off
 import { assertOrderAllowed, type TurnTrigger } from "@/lib/agent/order-guard";
 import { askOwner, notifyOwnerOfApproval } from "@/lib/agent/owner-notify";
 import { pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
+import { getValueProposition, getValuePropositionInput } from "@/lib/tools/value";
 import { z } from "zod";
 
 // Identity the model never has to handle: every tool call in a conversation
@@ -142,6 +143,13 @@ export const TOOLS: AnyTool[] = [
       return { ...result, ownerNotified };
     },
     label: (input) => `Aprobación solicitada: ${input.type}`,
+  }),
+  tool({
+    name: "get_value_proposition",
+    description: "Devuelve por qué a este cliente le conviene Nova frente a su proveedor actual: datos de su cuenta (crédito, stock para su pedido habitual, entrega, historial) y las ventajas aprobadas de la empresa. Úsalo al competir contra otro proveedor; nunca afirmes ventajas que no estén aquí.",
+    schema: getValuePropositionInput,
+    execute: (input, ctx) => getValueProposition({ ...input, customerId: ctx.customerId }),
+    label: () => "Propuesta de valor consultada",
   }),
   tool({
     name: "resend_payment_link",

@@ -86,8 +86,8 @@ export function autonomyFloorUnitPrice(unitPrice: number, autoMaxPct: number): n
 
 export type Concession = {
   unitPrice: number;
-  /** ask: accept the customer's price · match_reference: first offer, match the competitor · step: a small improvement · floor: the agent's best price · at_floor: only the owner can go lower. */
-  basis: "ask" | "match_reference" | "step" | "floor" | "at_floor";
+  /** ask: accept the customer's price · beat_reference: first offer, a little under the competitor · step: a small improvement · floor: the agent's best price · at_floor: only the owner can go lower. */
+  basis: "ask" | "beat_reference" | "step" | "floor" | "at_floor";
   withinAutonomy: boolean;
 };
 
@@ -103,14 +103,16 @@ export type Concession = {
  */
 export function nextConcession(args: { listUnitPrice: number; lastOffered: number | null; ask: number | null; floor: number; reference?: number | null }): Concession {
   const floorCents = Math.round(args.floor * 100);
-  // First offer once the competitor's price is known: match it (within the
-  // margin) — the customer already told us what it takes to win the order.
+  // First offer once the competitor's price is known: beat it a little (10
+  // cents, rounded down to 5) within the margin. Only matching it gives the
+  // customer no reason to switch ("me estás ofreciendo lo mismo").
   if (args.ask == null && args.lastOffered == null && args.reference != null) {
     const referenceCents = Math.round(args.reference * 100);
     const listCents = Math.round(args.listUnitPrice * 100);
     if (referenceCents < listCents) {
-      return referenceCents >= floorCents
-        ? { unitPrice: referenceCents / 100, basis: "match_reference", withinAutonomy: true }
+      const beat = Math.floor((referenceCents - 10) / 5) * 5;
+      return beat > floorCents
+        ? { unitPrice: beat / 100, basis: "beat_reference", withinAutonomy: true }
         : { unitPrice: floorCents / 100, basis: "floor", withinAutonomy: true };
     }
   }
