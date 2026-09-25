@@ -3,6 +3,8 @@ import {
   approvalButtons,
   callbackData,
   formatApprovalForOwner,
+  formatCaseForOwner,
+  suggestNextMove,
   formatQuestionForOwner,
   parseCallbackData,
   parseOwnerValue,
@@ -70,5 +72,38 @@ describe("what the owner reads", () => {
     const text = formatQuestionForOwner({ customerName: "Cliente", question: "¿Le damos 24 h?", lastCustomerMessage: null });
     expect(text).toContain("¿Le damos 24 h?");
     expect(text).toContain("Responde a este mensaje");
+  });
+});
+
+describe("owner case on Telegram (real conversation 2026-09-25)", () => {
+  const ownerCase = {
+    customerName: "Distribuidora Belleza del Istmo",
+    objection: "precio: considera que la diferencia frente a $17.75 por unidad es demasiado pequeña",
+    competitorPrice: 17.75,
+    competitorCondition: "entrega al día siguiente",
+    accountFacts: ["Ya nos conoce: 3 pedidos con nosotros desde junio de 2026.", "Su cuenta tiene crédito a 30 días con $12,000.00 disponibles."],
+    lastOffer: { productName: "Shampoo Professional 1L", quantity: 50, netUnitPrice: 17.65, listUnitPrice: 18.5, total: 882.5 },
+    floorUnitPrice: 17.58,
+    recentMessages: [
+      { sender: "customer" as const, body: "Precio es 17.75 y la entrega es al dia siguiente" },
+      { sender: "customer" as const, body: "No se no es gran diferencia" },
+    ],
+  };
+
+  it("gives the owner the case, not just the last message", () => {
+    const text = formatCaseForOwner(ownerCase, { question: "¿Cómo sigo?", draft: "Borrador" });
+    expect(text).toContain("Distribuidora Belleza del Istmo: necesito tu criterio");
+    expect(text).toContain("Qué pasa: Considera que la diferencia");
+    expect(text).toContain("Su proveedor actual: $17.75 c/u · entrega al día siguiente");
+    expect(text).toContain("Le ofrecí: $17.65 c/u × 50 Shampoo Professional 1L = $882.50 (lista $18.50)");
+    expect(text).toContain("Mi margen: puedo llegar a $17.58 c/u sin tu OK");
+    expect(text).toContain("• Ya nos conoce");
+    expect(text).toContain("Cliente: No se no es gran diferencia");
+    expect(text).toContain("Lo que yo haría: bajar a $17.58");
+    expect(text).not.toMatch(/oferta verificada|No logré/);
+  });
+
+  it("suggests holding the price once the agent is already at its floor", () => {
+    expect(suggestNextMove({ lastOffer: { ...ownerCase.lastOffer, netUnitPrice: 17.58 }, floorUnitPrice: 17.58 })).toMatch(/^sostener \$17\.58/);
   });
 });

@@ -422,7 +422,7 @@ describe("real conversation 2026-09-24 16:10 UTC: natural replies", () => {
 });
 
 describe("real conversation 2026-09-24 16:38 UTC: '¿No tienes un mejor precio?'", () => {
-  const BEAT_1765 = "Le puedo dejar el Shampoo Professional 1L en $17.65 por unidad, por debajo de lo que paga hoy: 50 unidades, total $882.50, con entrega al día siguiente y crédito a 30 días. ¿Me confirma el pedido?";
+  const BEAT_1765 = "Le puedo dejar el Shampoo Professional 1L en $17.65 por unidad, por debajo de lo que paga hoy: 50 unidades, total $882.50, con entrega al día siguiente y crédito a 30 días. ¿Le sirve así?";
 
   /** First offer against the competitor's $17.75: $17.65 (see the 01:44 case below). */
   async function beatCompetitor() {
@@ -452,7 +452,7 @@ describe("real conversation 2026-09-24 16:38 UTC: '¿No tienes un mejor precio?'
     await beatCompetitor();
     h.script = [
       calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.58, deliveryHours: 24 })),
-      say("Mi mejor precio es $17.58 por unidad: 50 unidades, total $879.00, con entrega al día siguiente. ¿Me confirma el pedido?"),
+      say("Mi mejor precio es $17.58 por unidad: 50 unidades, total $879.00, con entrega al día siguiente. ¿Le sirve así?"),
     ];
     await runAgentTurn(conversationId, "Algo más?");
     const [step2] = (await toolResults("prepare_verified_offer")).slice(-1);
@@ -473,8 +473,8 @@ describe("real conversation 2026-09-24 16:38 UTC: plain commercial language", ()
   it("rewrites 'para recuperar su pedido' / 'condiciones verificadas' before sending", async () => {
     h.script = [
       calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.75, deliveryHours: 24 })),
-      say("Perfecto, puedo igualar esa condición para recuperar su pedido: 50 unidades a $17.75 por unidad, total $887.50. ¿Me confirma el pedido?"),
-      say("Perfecto, le igualo ese precio: 50 unidades a $17.75 por unidad, total $887.50, con entrega al día siguiente. ¿Me confirma el pedido?"),
+      say("Perfecto, puedo igualar esa condición para recuperar su pedido: 50 unidades a $17.75 por unidad, total $887.50. ¿Le sirve así?"),
+      say("Perfecto, le igualo ese precio: 50 unidades a $17.75 por unidad, total $887.50, con entrega al día siguiente. ¿Le sirve así?"),
     ];
     await runAgentTurn(conversationId, "17.75");
     expect((await agentMessages()).at(-1)).toMatch(/^Perfecto, le igualo ese precio/);
@@ -484,7 +484,7 @@ describe("real conversation 2026-09-24 16:38 UTC: plain commercial language", ()
 describe("real conversation 2026-09-24 21:17 UTC: quote directly, don't ask permission", () => {
   it("rewrites '¿le cotizo las 50 unidades?' into an offer that beats the competitor", async () => {
     await database.query("insert into agente_comercial.customer_insights (conversation_id, customer_id, producto_interes, precio_objetivo, opt_out) values ($1, $2, 'Shampoo Professional 1L', 17.75, false)", [conversationId, customerId]);
-    const BEAT = "Le puedo dejar el Shampoo Professional 1L en $17.65 por unidad, por debajo de lo que paga hoy: 50 unidades, total $882.50, con entrega al día siguiente y crédito a 30 días. ¿Me confirma el pedido?";
+    const BEAT = "Le puedo dejar el Shampoo Professional 1L en $17.65 por unidad, por debajo de lo que paga hoy: 50 unidades, total $882.50, con entrega al día siguiente y crédito a 30 días. ¿Le sirve así?";
     h.script = [
       say("Gracias, lo tomo como referencia: su proveedor le ofrece el Shampoo Professional 1L a $17.75 por unidad y entrega al día siguiente. Para compararle en esas mismas condiciones, ¿le cotizo las 50 unidades de su último pedido?"),
       calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.65, deliveryHours: 24 })),
@@ -502,10 +502,10 @@ describe("real conversation 2026-09-24 21:17 UTC: quote directly, don't ask perm
 describe("real conversation 2026-09-25 02:0x UTC: the saving in dollars is not spelled out", () => {
   it("rewrites '$5.00 menos que su proveedor' into the same offer without the amount", async () => {
     await database.query("insert into agente_comercial.customer_insights (conversation_id, customer_id, producto_interes, precio_objetivo, opt_out) values ($1, $2, 'Shampoo Professional 1L', 17.75, false)", [conversationId, customerId]);
-    const CLEAN = "Le puedo dejar el Shampoo Professional 1L en $17.65 por unidad, por debajo de lo que paga hoy: 50 unidades, total $882.50, con entrega al día siguiente y crédito a 30 días. ¿Me confirma el pedido?";
+    const CLEAN = "Le puedo dejar el Shampoo Professional 1L en $17.65 por unidad, por debajo de lo que paga hoy: 50 unidades, total $882.50, con entrega al día siguiente y crédito a 30 días. ¿Le sirve así?";
     h.script = [
       calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.65, deliveryHours: 24 })),
-      say("Le puedo dejar el Shampoo Professional 1L en $17.65 por unidad, $5.00 menos que su proveedor en 50 unidades: total $882.50, con entrega al día siguiente. ¿Me confirma el pedido?"),
+      say("Le puedo dejar el Shampoo Professional 1L en $17.65 por unidad, $5.00 menos que su proveedor en 50 unidades: total $882.50, con entrega al día siguiente. ¿Le sirve así?"),
       say(CLEAN),
     ];
     await runAgentTurn(conversationId, "Mi proveedor me lo deja a 17.75");
@@ -516,7 +516,7 @@ describe("real conversation 2026-09-25 02:0x UTC: the saving in dollars is not s
 
 describe("real conversation 2026-09-25 01:44 UTC: 'me estás ofreciendo lo mismo'", () => {
   const MATCH = "Puedo igualar el precio y la entrega: 50 unidades de Shampoo Professional 1L a $17.75 por unidad, total $887.50, con entrega al día siguiente. ¿Me confirma que lo prepare?";
-  const BEAT = "Le puedo dejar el Shampoo Professional 1L en $17.65 por unidad, por debajo de lo que paga hoy: 50 unidades, total $882.50, con entrega al día siguiente. Además su cuenta tiene crédito a 30 días, así que no tiene que pagar por adelantado. ¿Me confirma el pedido?";
+  const BEAT = "Le puedo dejar el Shampoo Professional 1L en $17.65 por unidad, por debajo de lo que paga hoy: 50 unidades, total $882.50, con entrega al día siguiente. Además su cuenta tiene crédito a 30 días, así que no tiene que pagar por adelantado. ¿Le sirve así?";
 
   beforeEach(async () => {
     await database.query("insert into agente_comercial.customer_insights (conversation_id, customer_id, producto_interes, precio_objetivo, opt_out) values ($1, $2, 'Shampoo Professional 1L', 17.75, false)", [conversationId, customerId]);
@@ -541,7 +541,7 @@ describe("real conversation 2026-09-25 01:44 UTC: 'me estás ofreciendo lo mismo
   });
 
   it("accepting the customer's own price is not 'matching': $17.75 asked explicitly is taken as is", async () => {
-    const ACCEPT = "Perfecto, se lo dejo en $17.75 por unidad: 50 unidades, total $887.50, con entrega al día siguiente. ¿Me confirma el pedido?";
+    const ACCEPT = "Perfecto, se lo dejo en $17.75 por unidad: 50 unidades, total $887.50, con entrega al día siguiente. ¿Le sirve así?";
     h.script = [
       calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.75, customerAskUnitPrice: 17.75, deliveryHours: 24 })),
       say(ACCEPT),
@@ -559,7 +559,7 @@ describe("real conversation 2026-09-25 01:44 UTC: 'me estás ofreciendo lo mismo
     await runAgentTurn(conversationId, "17.75");
     h.script = [
       calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.58, deliveryHours: 24 })),
-      say("Entiendo. Mi mejor precio es $17.58 por unidad: 50 unidades, total $879.00, con entrega al día siguiente y crédito a 30 días. ¿Me confirma el pedido?"),
+      say("Entiendo. Mi mejor precio es $17.58 por unidad: 50 unidades, total $879.00, con entrega al día siguiente y crédito a 30 días. ¿Le sirve así?"),
     ];
     await runAgentTurn(conversationId, "Creo que me estás ofreciendo lo mismo");
     expect((await toolResults("prepare_verified_offer")).at(-1)).toMatchObject({

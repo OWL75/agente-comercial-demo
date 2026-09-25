@@ -22,7 +22,7 @@ import { loadFollowUpContext } from "@/lib/agent/follow-up-data";
 import { askOwner } from "@/lib/agent/owner-notify";
 import { resolveProductRefs } from "@/lib/tools/catalog";
 import { isRepetition } from "@/lib/agent/follow-up-context";
-import { asksForConfirmation, asksPermissionToQuote, mentionsSavingsAmount, onlyMatchesReference, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
+import { asksForConfirmation, asksPermissionToQuote, mentionsSavingsAmount, onlyMatchesReference, soundsPushy, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
 import { announceOrderToOwner, pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { formatDateEs } from "@/lib/payments/payment-messages";
 
@@ -40,6 +40,22 @@ const REPETITION_NOTE = (customerMessage: string) =>
 const COMMERCIAL_FOLLOW_UP_ISSUE = "incluye precio, descuento, total o entrega sin una oferta verificada";
 
 const UNVERIFIED_TERMS_NOTE = "(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta afirmaba precio, descuento, total o un compromiso de entrega sin una oferta verificada, así que no se envió. Si todavía estás entendiendo la situación del cliente (no sabes su precio de referencia, su cantidad o qué lo haría volver), no presentes una oferta: responde sin cifras propias ni compromisos y haz la pregunta que falta. Si ya tienes lo necesario y el cliente espera una propuesta, verifícala con prepare_verified_offer y responde con el resultado; si no dio cantidad, propón su cantidad habitual del historial. Nunca digas que lo vas a validar más tarde.";
+
+const money = (value: number) => `$${value.toFixed(2)}`;
+
+/** Names the exact figures the rewrite may use, so it does not fail the same way twice. */
+function unverifiedTermsNote(offer: VerifiedOfferResult | null): string {
+  if (!offer || offer.status !== "ready") return UNVERIFIED_TERMS_NOTE;
+  const allowed = [
+    `precio ${money(offer.netUnitPrice)} por unidad`,
+    `total ${money(offer.total)}`,
+    `precio de lista ${money(offer.listUnitPrice)}`,
+    ...(offer.negotiation?.referenceUnitPrice != null ? [`su proveedor ${money(offer.negotiation.referenceUnitPrice)}`] : []),
+  ].join(", ");
+  return `(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta tenía una cifra que no coincide con tu última oferta preparada, así que no se envió. Las únicas cifras que puedes escribir son: ${allowed}. Escríbela de nuevo con esas cifras (o sin cifras) y el mismo sentido; si quieres otra cifra, prepárala antes con prepare_verified_offer.`;
+}
+
+const PUSHY_NOTE = "(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta suena a vendedor insistente (urgencia, presión o \"¿Me confirma el pedido?\"). Escríbela de nuevo con las mismas condiciones, respondiendo a lo que el cliente dijo y cerrando con una pregunta suave que deje la decisión en sus manos, por ejemplo \"¿Le sirve así?\" o \"Si le parece, se lo dejo listo\".";
 
 type ConversationContext = {
   customerId: string;
@@ -264,7 +280,7 @@ async function executeAgentLoop(
       label: "Respuesta con condiciones sin verificar: el agente la verifica y la reescribe",
       payload: { violations, draft: reply },
     });
-    input = input.concat(response.output, [{ role: "user", content: UNVERIFIED_TERMS_NOTE }]);
+    input = input.concat(response.output, [{ role: "user", content: unverifiedTermsNote(verifiedOffer) }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
     reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
@@ -295,7 +311,7 @@ async function executeAgentLoop(
     await logAudit({ conversationId, category: "system", label: "Respuesta que pide permiso para cotizar: el agente cotiza directamente", payload: { draft: reply } });
     input = input.concat(response.output, [{
       role: "user",
-      content: "(Nota interna del sistema, nunca la menciones al cliente.) No pidas permiso para cotizar. Si ya conoces producto, cantidad (o su cantidad habitual) y su precio de referencia, prepara la oferta con prepare_verified_offer y preséntala ahora (negotiation.recommendedUnitPrice), destacando lo que suma y pidiendo confirmación. Si falta un dato, pregunta solo ese dato.",
+      content: "(Nota interna del sistema, nunca la menciones al cliente.) No pidas permiso para cotizar. Si ya conoces producto, cantidad (o su cantidad habitual) y su precio de referencia, prepara la oferta con prepare_verified_offer y preséntala ahora (negotiation.recommendedUnitPrice), destacando lo que suma y cerrando con una pregunta suave (\"¿Le sirve así?\"). Si falta un dato, pregunta solo ese dato.",
     }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
@@ -310,7 +326,7 @@ async function executeAgentLoop(
     await logAudit({ conversationId, category: "system", label: "Oferta igual al precio del competidor: el agente la mejora y explica la diferencia", payload: { draft: reply } });
     input = input.concat(response.output, [{
       role: "user",
-      content: "(Nota interna del sistema, nunca la menciones al cliente.) Tu oferta solo iguala el precio de su proveedor: así el cliente no ve ninguna diferencia. Prepara la oferta con prepare_verified_offer a negotiation.recommendedUnitPrice, preséntala sin cifrar el ahorro y con una o dos ventajas de get_value_proposition que respondan a lo que valora, y pide confirmación.",
+      content: "(Nota interna del sistema, nunca la menciones al cliente.) Tu oferta solo iguala el precio de su proveedor: así el cliente no ve ninguna diferencia. Prepara la oferta con prepare_verified_offer a negotiation.recommendedUnitPrice, preséntala sin cifrar el ahorro y con una o dos ventajas de get_value_proposition que respondan a lo que valora, y cierra con una pregunta suave (\"¿Le sirve así?\").",
     }]);
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
@@ -348,6 +364,24 @@ async function executeAgentLoop(
     violations = violationsOf(reply);
   }
 
+  // Pressure loses a B2B customer faster than price does: one rewrite in a
+  // calmer tone with the same conditions.
+  if (opts.trigger !== "opening" && !violations.length && soundsPushy(reply)) {
+    await logAudit({ conversationId, category: "system", label: "Respuesta insistente: el agente la reescribe sin presión", payload: { draft: reply } });
+    input = input.concat(response.output, [{ role: "user", content: PUSHY_NOTE }]);
+    const rewritten = await untilText(await client.responses.create({ model, instructions, input, tools }));
+    if (!rewritten) return "";
+    const calmer = stripZeroDiscount(toWhatsAppText(rewritten.output_text ?? ""));
+    pendingApproval = await hasPendingApproval();
+    // Keep the original if the rewrite broke a commercial rule: pressure is
+    // a tone problem, an unverified figure is a correctness one.
+    if (calmer && !violationsOf(calmer).length) {
+      response = rewritten;
+      reply = calmer;
+    }
+    violations = violationsOf(reply);
+  }
+
   let presentedVerifiedOffer = false;
   if (violations.length) {
     await logAudit({
@@ -359,7 +393,8 @@ async function executeAgentLoop(
     const ownerConsulted = opts.trigger === "customer_message" && !pendingApproval &&
       await askOwner(
         conversationId,
-        `No logré armar una oferta verificada para responder al cliente: «${opts.customerMessage ?? ""}». ¿Cómo quieres que siga?`,
+        `Me escribió «${opts.customerMessage ?? ""}» y no quise responderle sin tu visto bueno. ¿Cómo sigo?`,
+        { draft: reply, turnOffer: verifiedOffer },
       );
     reply = guardedFallback(pendingApproval, ownerConsulted);
   } else presentedVerifiedOffer = presentsFinalVerifiedOffer(reply, verifiedOffer);
@@ -499,7 +534,7 @@ export async function resumeAfterHumanDecision(
     ...history,
     {
       role: "system" as const,
-      content: `Un humano acaba de decidir sobre la aprobación pendiente: ${decisionSummary} El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo consultaste y refleja la decisión. Si quedó aprobada, verifica la oferta con prepare_verified_offer y, si queda ready, preséntala completa y pide su confirmación explícita; si fue rechazada, ofrece la mejor alternativa dentro de tu autonomía. El pedido solo puede crearse cuando el cliente responda confirmando. Actualiza la etapa con update_opportunity_stage si corresponde.`,
+      content: `Un humano acaba de decidir sobre la aprobación pendiente: ${decisionSummary} El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo consultaste y refleja la decisión. Si quedó aprobada, verifica la oferta con prepare_verified_offer y, si queda ready, preséntala completa y pregúntale con naturalidad si se la deja lista; si fue rechazada, ofrece la mejor alternativa dentro de tu autonomía. El pedido solo puede crearse cuando el cliente responda confirmando. Actualiza la etapa con update_opportunity_stage si corresponde.`,
     },
   ];
   const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" });
@@ -522,7 +557,7 @@ export async function resumeAfterOwnerAnswer(
     ...history,
     {
       role: "system" as const,
-      content: `Consultaste al dueño: "${question}". Su respuesta: "${answer}". El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo consultaste y lleva la conversación hacia el cierre con esa indicación. Todo precio, descuento, crédito o entrega que menciones debe salir de prepare_verified_offer; si la indicación excede la política, las herramientas lo rechazarán y deberás ofrecer la mejor alternativa permitida. Nunca menciones al dueño por su nombre ni cites su mensaje literal.`,
+      content: `Consultaste al dueño: "${question}". Su respuesta: "${answer}". El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo consultaste y sigue la conversación con esa indicación, sin presionar. Todo precio, descuento, crédito o entrega que menciones debe salir de prepare_verified_offer; si la indicación excede la política, las herramientas lo rechazarán y deberás ofrecer la mejor alternativa permitida. Nunca menciones al dueño por su nombre ni cites su mensaje literal.`,
     },
   ];
   const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" });

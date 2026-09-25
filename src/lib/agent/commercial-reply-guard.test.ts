@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commercialReplyViolations, mentionsSavingsAmount, onlyMatchesReference, presentsFinalVerifiedOffer } from "./commercial-reply-guard";
+import { asksForConfirmation, commercialReplyViolations, guardedFallback, mentionsSavingsAmount, onlyMatchesReference, presentsFinalVerifiedOffer, soundsPushy } from "./commercial-reply-guard";
 import type { VerifiedOfferResult } from "@/lib/tools/offers";
 
 const ready: VerifiedOfferResult = {
@@ -167,5 +167,45 @@ describe("real conversation 2026-09-25 01:44 UTC: beating the competitor, not ma
     expect(mentionsSavingsAmount("Le puedo dejar el Shampoo en $17.65 por unidad, $5.00 menos que su proveedor en 50 unidades.")).toBe(true);
     expect(mentionsSavingsAmount("Con este precio ahorra $5.00 en su pedido.")).toBe(true);
     expect(mentionsSavingsAmount("Le puedo dejar el Shampoo en $17.65 por unidad, por debajo de lo que paga hoy: total $882.50.")).toBe(false);
+  });
+});
+
+describe("real conversation 2026-09-25 16:57 UTC: \"no es gran diferencia\"", () => {
+  const floorOffer: VerifiedOfferResult = {
+    ...ready,
+    discountPct: 4.973,
+    netUnitPrice: 17.58,
+    total: 879,
+    negotiation: {
+      customerAskUnitPrice: 17.58,
+      lastOfferedUnitPrice: 17.65,
+      autonomyFloorUnitPrice: 17.58,
+      referenceUnitPrice: 17.75,
+      askWithinAutonomy: true,
+      recommendedUnitPrice: 17.58,
+      recommendationBasis: "ask",
+    },
+  };
+
+  it("lets the agent name its own previous offer while improving it", () => {
+    expect(violations("Entiendo, de $17.65 se lo puedo dejar en *$17.58 por unidad*, total *$879.00*. ¿Le sirve así?", floorOffer)).toEqual([]);
+  });
+
+  it("treats a soft close as the confirmation request of the offer", () => {
+    expect(asksForConfirmation("¿Le sirve así?")).toBe(true);
+    expect(asksForConfirmation("Si le parece, se lo dejo listo para mañana.")).toBe(true);
+    expect(presentsFinalVerifiedOffer("Le ofrezco *$17.58 por unidad*, total *$879.00*. ¿Le sirve así?", floorOffer)).toBe(true);
+  });
+
+  it("flags pressure but not a calm close", () => {
+    expect(soundsPushy("Le ofrezco $17.65 por unidad. ¿Me confirma el pedido?")).toBe(true);
+    expect(soundsPushy("Aproveche este precio solo por hoy.")).toBe(true);
+    expect(soundsPushy("Le ofrezco $17.65 por unidad. ¿Le sirve así?")).toBe(false);
+  });
+
+  it("falls back in usted, without a made-up manager", () => {
+    for (const text of [guardedFallback(true), guardedFallback(false, true), guardedFallback(false)]) {
+      expect(text).not.toMatch(/\b(déjame|te|gerente)\b/i);
+    }
   });
 });

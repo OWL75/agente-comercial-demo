@@ -61,6 +61,7 @@ import { database } from "./sql-harness";
 import { runAgentTurn } from "@/lib/agent/runtime";
 import { handleTelegramUpdate } from "@/lib/agent/owner-telegram";
 import { ownerChatId } from "@/lib/agent/owner-notify";
+import { guardedFallback } from "@/lib/agent/commercial-reply-guard";
 
 const customerId = "11111111-1111-1111-1111-111111111111";
 const conversationId = "22222222-2222-2222-2222-222222222222";
@@ -151,7 +152,7 @@ describe("the real dead end: 'Déjame validar…' never came back", () => {
     h.script = [say("Te lo dejo en $17.50."), say("Te lo dejo en $17.50.")];
     await runAgentTurn(conversationId, REAL_MESSAGE);
 
-    expect((await agentMessages()).at(-1)).toBe("Déjame confirmarlo con mi gerente y te escribo en unos minutos con la propuesta.");
+    expect((await agentMessages()).at(-1)).toBe(guardedFallback(false, true));
     const question = h.telegram.at(-1)!;
     expect(question.chatId).toBe(String(OWNER));
     expect(question.text).toContain(REAL_MESSAGE);

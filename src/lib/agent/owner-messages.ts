@@ -132,6 +132,71 @@ export function approvalButtons(approvalId: string, type: string, requested: num
   };
 }
 
+/** Everything the owner needs to decide without opening the panel. */
+export type OwnerCase = {
+  customerName: string;
+  /** Why they left / what they object to, as recorded during the chat. */
+  objection: string | null;
+  competitorPrice: number | null;
+  competitorCondition: string | null;
+  /** Verified account facts (get_value_proposition), the case for staying with Nova. */
+  accountFacts: string[];
+  lastOffer: { productName: string; quantity: number; netUnitPrice: number; listUnitPrice: number; total: number } | null;
+  floorUnitPrice: number | null;
+  recentMessages: Array<{ sender: "customer" | "agent"; body: string }>;
+};
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
+
+/** "precio: considera insuficiente…" → "considera insuficiente…" (the type prefix is internal). */
+function objectionDetail(objection: string): string {
+  const detail = objection.replace(/^\s*[a-záéíóú]+\s*:\s*/i, "").trim();
+  return detail ? detail[0].toUpperCase() + detail.slice(1) : objection;
+}
+
+/**
+ * What the agent would do next with the margin it has, so the owner can
+ * answer with a word instead of working the numbers out.
+ */
+export function suggestNextMove(c: Pick<OwnerCase, "lastOffer" | "floorUnitPrice">): string | null {
+  if (!c.lastOffer || c.floorUnitPrice == null) return null;
+  if (c.lastOffer.netUnitPrice - c.floorUnitPrice > 0.004) {
+    return `bajar a ${money(c.floorUnitPrice)} por unidad, que es lo más bajo que puedo sin tu OK, y explicarle por qué le conviene seguir con nosotros más allá del precio.`;
+  }
+  return `sostener ${money(c.lastOffer.netUnitPrice)}, que ya es mi tope, y proponerle un pedido de prueba. Si quieres bajar más, dime a cuánto.`;
+}
+
+export function formatCaseForOwner(c: OwnerCase, ask: { question: string; draft?: string | null }): string {
+  const lines = [`${c.customerName}: necesito tu criterio`, "", ask.question];
+
+  const situation = [
+    c.objection ? `Qué pasa: ${objectionDetail(c.objection)}` : null,
+    c.competitorPrice != null
+      ? `Su proveedor actual: ${money(c.competitorPrice)} c/u${c.competitorCondition ? ` · ${c.competitorCondition}` : ""}`
+      : null,
+    c.lastOffer
+      ? `Le ofrecí: ${money(c.lastOffer.netUnitPrice)} c/u × ${c.lastOffer.quantity} ${c.lastOffer.productName} = ${money(c.lastOffer.total)} (lista ${money(c.lastOffer.listUnitPrice)})`
+      : null,
+    c.floorUnitPrice != null ? `Mi margen: puedo llegar a ${money(c.floorUnitPrice)} c/u sin tu OK` : null,
+  ].filter((line): line is string => !!line);
+  if (situation.length) lines.push("", ...situation);
+
+  if (c.accountFacts.length) lines.push("", "A nuestro favor:", ...c.accountFacts.map((fact) => `• ${fact}`));
+
+  if (c.recentMessages.length) {
+    lines.push("", "La conversación:");
+    for (const m of c.recentMessages) lines.push(`${m.sender === "customer" ? "Cliente" : "Nosotros"}: ${clip(m.body, 220)}`);
+  }
+
+  const suggestion = suggestNextMove(c);
+  if (suggestion) lines.push("", `Lo que yo haría: ${suggestion}`);
+  if (ask.draft) lines.push("", `Lo que pensaba responderle: «${clip(ask.draft, 400)}»`);
+
+  lines.push("", "Respóndeme aquí con lo que decidas (por ejemplo «dale el mejor precio», «mantén el precio» o «déjalo para la otra semana») y le escribo al cliente.");
+  // Telegram's hard limit is 4096 characters.
+  return clip(lines.join("\n"), 4000);
+}
+
 export function formatQuestionForOwner(args: { customerName: string; question: string; lastCustomerMessage: string | null }): string {
   return [
     `Consulta sobre ${args.customerName}`,

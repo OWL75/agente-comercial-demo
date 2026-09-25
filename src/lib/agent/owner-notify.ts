@@ -6,8 +6,12 @@ import { isTelegramConfigured, sendTelegramMessage } from "@/lib/channel/telegra
 import {
   approvalButtons,
   formatApprovalForOwner,
+  formatCaseForOwner,
   formatQuestionForOwner,
+  type OwnerCase,
 } from "@/lib/agent/owner-messages";
+import { getValueProposition } from "@/lib/tools/value";
+import type { VerifiedOfferResult } from "@/lib/tools/offers";
 
 /**
  * Owner channel on Telegram. Links between a Telegram message and what it is
@@ -136,15 +140,70 @@ export async function notifyOwnerOfApproval(approvalId: string): Promise<boolean
   }
 }
 
-/** Sends a free question; the owner's reply to that message resumes the conversation. */
-export async function askOwner(conversationId: string, question: string): Promise<boolean> {
+/**
+ * The case as the owner needs it: what the customer wants, what we offered,
+ * our margin, why Nova is worth it and the last messages — from recorded
+ * data only, never from what the model says about itself.
+ */
+async function loadOwnerCase(conversationId: string, turnOffer: VerifiedOfferResult | null): Promise<OwnerCase | null> {
+  const [row] = await sql<Array<{
+    customer_id: string; name: string; objecion: string | null; precio_objetivo: string | null; condicion_solicitada: string | null;
+  }>>`
+    select c.id as customer_id, c.name, i.objecion, i.precio_objetivo, i.condicion_solicitada
+    from agente_comercial.conversations conv
+    join agente_comercial.customers c on c.id = conv.customer_id
+    left join agente_comercial.customer_insights i on i.conversation_id = conv.id
+    where conv.id = ${conversationId}
+  `;
+  if (!row) return null;
+  // What the customer actually saw, not an offer prepared and never sent.
+  const [presented] = await sql<Array<{ offer: VerifiedOfferResult }>>`
+    select payload->'offer' as offer from agente_comercial.audit_log
+    where conversation_id = ${conversationId} and category = 'policy_check' and payload ? 'offer'
+    order by created_at desc limit 1
+  `;
+  const recent = await sql<Array<{ sender: string; body: string }>>`
+    select sender, body from agente_comercial.messages
+    where conversation_id = ${conversationId} and sender in ('customer', 'agent')
+    order by created_at desc limit 6
+  `;
+  const value = await getValueProposition({ customerId: row.customer_id }).catch(() => null);
+  const offer = presented?.offer ?? null;
+  const floor = turnOffer?.negotiation?.autonomyFloorUnitPrice ?? offer?.negotiation?.autonomyFloorUnitPrice ?? null;
+  return {
+    customerName: row.name,
+    objection: row.objecion,
+    competitorPrice: row.precio_objetivo != null ? Number(row.precio_objetivo) : offer?.negotiation?.referenceUnitPrice ?? null,
+    competitorCondition: row.condicion_solicitada,
+    accountFacts: value?.customerFacts ?? [],
+    lastOffer: offer && {
+      productName: offer.productName,
+      quantity: offer.quantity,
+      netUnitPrice: offer.netUnitPrice,
+      listUnitPrice: offer.listUnitPrice,
+      total: offer.total,
+    },
+    floorUnitPrice: floor,
+    recentMessages: recent.reverse().map((m) => ({ sender: m.sender === "customer" ? "customer" : "agent", body: m.body })),
+  };
+}
+
+/** Sends a free question with the whole case; the owner's reply to that message resumes the conversation. */
+export async function askOwner(
+  conversationId: string,
+  question: string,
+  opts: { draft?: string | null; turnOffer?: VerifiedOfferResult | null } = {},
+): Promise<boolean> {
   const chatId = await ready(conversationId, "Consulta al dueño");
   if (!chatId) return false;
   try {
-    const snapshot = await customerSnapshot(conversationId);
+    const ownerCase = await loadOwnerCase(conversationId, opts.turnOffer ?? null);
+    const snapshot = ownerCase ? null : await customerSnapshot(conversationId);
     const { messageId } = await sendTelegramMessage(
       chatId,
-      formatQuestionForOwner({ customerName: snapshot?.name ?? "el cliente", question, lastCustomerMessage: snapshot?.last_customer ?? null }),
+      ownerCase
+        ? formatCaseForOwner(ownerCase, { question, draft: opts.draft })
+        : formatQuestionForOwner({ customerName: snapshot?.name ?? "el cliente", question, lastCustomerMessage: snapshot?.last_customer ?? null }),
       { force_reply: true, input_field_placeholder: "Tu indicación para el cliente…" },
     );
     await recordLink(messageId, { purpose: "question", conversationId, question }, `Consulta enviada al dueño por Telegram: ${question}`.slice(0, 300));

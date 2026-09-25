@@ -16,7 +16,7 @@ const prompt = buildSystemPrompt(ctx, { isOpeningMessage: false }, "2026-09-23")
 describe("sales playbook", () => {
   it("has a guide for every objection situation the agent must handle", () => {
     expect(OBJECTION_GUIDES.map((g) => g.id)).toEqual([
-      "sin_interes", "proveedor_actual", "contrato", "precio", "mala_experiencia", "desconfianza",
+      "sin_interes", "proveedor_actual", "poca_diferencia", "contrato", "precio", "mala_experiencia", "desconfianza",
       "inventario", "presupuesto", "autoridad", "pensarlo", "mas_adelante", "opt_out",
     ]);
     for (const guide of OBJECTION_GUIDES) {

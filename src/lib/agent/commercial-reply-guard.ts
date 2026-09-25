@@ -5,7 +5,9 @@ const PERCENT = /(\d+(?:[.,]\d+)?)\s*%/g;
 const COMPETITOR_REFERENCE = /\b(proveedor|competidor|referencia|pagas|pagan|te\s+(?:lo\s+)?deja|mencionaste|compartiste|actualmente)\b/i;
 const PENDING_LANGUAGE = /\b(pendiente|por confirmar|por validar|requiere (?:una )?aprobaci[oó]n|sujeto a aprobaci[oó]n|solicit[eé] (?:la )?aprobaci[oó]n)\b/i;
 // Both "tú" and "usted" forms: the agent writes in "usted" ("¿Confirma el pedido?").
-const CONFIRMATION_ASK = /\b(confirmas?|me\s+confirmas?|procedemos|procedo|cerramos|hago\s+el\s+pedido|registro\s+el\s+pedido|ingreso\s+el\s+pedido|lo\s+ingreso)\b/i;
+// Soft closes ("¿Le sirve así?", "¿Se lo dejo listo?") ask the same thing
+// without pressure, so a plain "sí" to them confirms the offer too.
+const CONFIRMATION_ASK = /\b(confirmas?|me\s+confirmas?|procedemos|procedo|cerramos|hago\s+el\s+pedido|registro\s+el\s+pedido|ingreso\s+el\s+pedido|lo\s+ingreso|(?:le|te)\s+(?:sirve|funciona)|se\s+lo\s+(?:dejo|preparo|aparto)|lo\s+dejo\s+listo)\b/i;
 
 /** The agent's message asks the customer to confirm the offer it presents. */
 export function asksForConfirmation(text: string): boolean {
@@ -112,6 +114,8 @@ export function commercialReplyViolations(args: {
     verifiedOffer.total,
     // The competitor's price the offer beats ("en vez de $17.75") is the customer's own figure.
     ...(verifiedOffer.negotiation?.referenceUnitPrice != null ? [verifiedOffer.negotiation.referenceUnitPrice] : []),
+    // Our own previous offer in this negotiation ("de $17.65 se lo dejo en $17.58").
+    ...(verifiedOffer.negotiation?.lastOfferedUnitPrice != null ? [verifiedOffer.negotiation.lastOfferedUnitPrice] : []),
     // A spelled-out saving is true, just not worth saying: mentionsSavingsAmount
     // rewrites it without blocking the offer as an unverified figure.
     ...savingsOf(verifiedOffer),
@@ -153,12 +157,20 @@ export function presentsFinalVerifiedOffer(reply: string, offer: VerifiedOfferRe
 /** Only sent when a promise to come back is real: an approval or an owner question is open. */
 export function guardedFallback(hasPendingApproval: boolean, ownerConsulted = false): string {
   if (hasPendingApproval) {
-    return "La condición solicitada todavía requiere aprobación. Ya está en revisión y te confirmo apenas tenga respuesta.";
+    return "Esa condición todavía requiere aprobación. Ya la estoy revisando y le escribo apenas tenga respuesta.";
   }
   if (ownerConsulted) {
-    return "Déjame confirmarlo con mi gerente y te escribo en unos minutos con la propuesta.";
+    return "Déjeme revisarlo bien y le escribo en unos minutos.";
   }
-  return "Déjame validar precio, descuento, disponibilidad y entrega antes de darte una oferta firme.";
+  return "Déjeme revisar bien las condiciones y le escribo con una propuesta concreta.";
+}
+
+// Pressure a good B2B salesperson never uses: urgency, scarcity, a curt
+// "¿Me confirma el pedido?" or pushing the customer to decide now.
+const PRESSURE = /\b(aprovech[ae]|solo\s+por\s+hoy|[uú]ltima\s+oportunidad|no\s+(?:lo\s+)?deje\s+pasar|por\s+tiempo\s+limitado|antes\s+de\s+que\s+se\s+acabe|decida\s+(?:hoy|ya|ahora)|me\s+confirma\s+(?:el|su)\s+pedido)\b/i;
+
+export function soundsPushy(text: string): boolean {
+  return PRESSURE.test(text);
 }
 
 // Words from the agent's own process that a salesperson would never write

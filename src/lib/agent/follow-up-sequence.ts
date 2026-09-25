@@ -17,7 +17,7 @@ export const FOLLOW_UP_STEPS: readonly FollowUpStep[] = [
     productionDelay: "+2 días hábiles sin respuesta",
     requiresTemplate: true,
     instruction:
-      "Retoma el hilo con algo nuevo y verificado con las herramientas que responda a su situación, y cierra con una propuesta pequeña y fácil de aceptar. No inventes ningún dato.",
+      "Retoma el hilo con algo nuevo y verificado con las herramientas que responda a su situación, y cierra con una propuesta pequeña y fácil de aceptar, sin presión. Si ya le diste una oferta, no le ofrezcas \"prepararle\" una comparación o cotización: recuérdale en una frase lo que gana con Nova y déjale la puerta abierta. No inventes ningún dato.",
   },
   {
     step: 2,
