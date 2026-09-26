@@ -3,6 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import { PRIORITY_LABELS, STATUS_LABELS } from "@/lib/labels";
+import { IconSearch } from "@/components/ui/icons";
 
 export function OpportunityFilters() {
   const router = useRouter();
@@ -20,21 +21,25 @@ export function OpportunityFilters() {
     });
   }
 
+  const select = "input !w-auto cursor-pointer pr-8";
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <input
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          updateParam("search", e.target.value);
-        }}
-        placeholder="Buscar cliente…"
-        className="w-56 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
-      />
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="relative">
+        <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+        <input
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            updateParam("search", e.target.value);
+          }}
+          placeholder="Buscar cliente…"
+          className="input !w-60 !py-2 pl-9"
+        />
+      </label>
       <select
         defaultValue={searchParams.get("priority") ?? ""}
         onChange={(e) => updateParam("priority", e.target.value)}
-        className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+        className={`${select} !py-2`}
       >
         <option value="">Todas las prioridades</option>
         {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
@@ -46,7 +51,7 @@ export function OpportunityFilters() {
       <select
         defaultValue={searchParams.get("status") ?? ""}
         onChange={(e) => updateParam("status", e.target.value)}
-        className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+        className={`${select} !py-2`}
       >
         <option value="">Todos los estados</option>
         {Object.entries(STATUS_LABELS).map(([value, label]) => (

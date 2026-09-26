@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { runAgentTurn } from "@/lib/agent/runtime";
 import { simulateAgreedFollowUp, simulateCustomerSilence } from "@/lib/agent/follow-up";
 import { simulateNextPaymentReminder } from "@/lib/payments/payments";
@@ -14,8 +15,15 @@ export async function sendMessageAction(conversationId: string, formData: FormDa
   if (!text) return;
   if (text.length > 4096) throw new Error("Mensaje demasiado largo.");
 
-  await runAgentTurn(conversationId, text);
-  revalidatePath(`/conversaciones/${conversationId}`);
+  // The agent answers in the background: the panel shows the customer message
+  // and "Fernán está escribiendo…" right away, and the reply arrives live.
+  after(async () => {
+    try {
+      await runAgentTurn(conversationId, text);
+    } catch (error) {
+      console.error("[demo] el agente no pudo responder:", error instanceof Error ? error.message : error);
+    }
+  });
 }
 
 export async function simulateNoReplyAction(conversationId: string) {

@@ -2,15 +2,14 @@
 
 import { useFormStatus } from "react-dom";
 import type { ReminderStep } from "@/lib/payments/payment-messages";
+import { StepList } from "@/components/ui/steps";
+import { IconCard, IconClock, IconExternal } from "@/components/ui/icons";
 
 function SimulateButton() {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-amber-400 disabled:cursor-wait disabled:opacity-70"
-    >
+    <button type="submit" disabled={pending} className="btn btn-warning w-full !py-2">
+      <IconClock className="h-4 w-4" />
       {pending ? "Enviando recordatorio…" : "Simular que pasa el tiempo sin pago"}
     </button>
   );
@@ -36,48 +35,38 @@ export function PaymentReminderPanel({
   action: () => Promise<void>;
 }) {
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-slate-300">
-        {totalLabel} · vence el <span className="font-medium text-slate-100">{dueDateLabel}</span>
-      </p>
-      <ol className="space-y-2">
-        {steps.map((s) => {
-          const sent = s.step <= sentCount;
-          const next = s.step === sentCount + 1 && canSimulate;
-          return (
-            <li key={s.step} className="flex gap-2 text-xs">
-              <span className={sent ? "text-emerald-400" : next ? "text-amber-400" : "text-slate-600"}>
-                {sent ? "✓" : next ? "●" : "○"}
-              </span>
-              <div>
-                <p className={sent || next ? "font-medium text-slate-100" : "text-slate-400"}>
-                  {s.step}. {s.title}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {s.productionTiming}
-                  {s.notifyOwner ? " · avisa al dueño por Telegram" : ""}
-                </p>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 rounded-xl bg-white/[0.03] p-3 ring-1 ring-inset ring-white/[0.06]">
+        <span className="grid h-9 w-9 place-items-center rounded-lg bg-teal-400/10 text-teal-300 ring-1 ring-inset ring-teal-400/20">
+          <IconCard className="h-4 w-4" />
+        </span>
+        <div>
+          <p className="text-base font-semibold text-white tabular-nums">{totalLabel}</p>
+          <p className="text-xs text-slate-400">
+            Vence el <span className="text-slate-200">{dueDateLabel}</span>
+          </p>
+        </div>
+      </div>
+
+      <StepList
+        steps={steps.map((s) => ({
+          key: s.step,
+          title: s.title,
+          detail: `${s.productionTiming}${s.notifyOwner ? " · avisa a Abdiel por Telegram" : ""}`,
+          state: s.step <= sentCount ? "sent" : s.step === sentCount + 1 && canSimulate ? "next" : "later",
+        }))}
+      />
 
       {canSimulate ? (
         <form action={action}>
           <SimulateButton />
         </form>
       ) : (
-        <p className="rounded-lg bg-slate-800/60 px-3 py-2 text-xs text-slate-400">{blockedReason}</p>
+        <p className="rounded-xl bg-white/[0.04] px-3 py-2.5 text-xs text-slate-400 ring-1 ring-inset ring-white/[0.06]">{blockedReason}</p>
       )}
 
-      <a
-        href={paymentHref}
-        target="_blank"
-        rel="noreferrer"
-        className="block rounded-lg border border-slate-700 px-3 py-2 text-center text-xs text-cyan-300 hover:border-cyan-500"
-      >
-        Abrir la página de pago que recibe el cliente
+      <a href={paymentHref} target="_blank" rel="noreferrer" className="btn btn-secondary w-full !py-2 text-xs">
+        Abrir la página de pago que recibe el cliente <IconExternal className="h-3.5 w-3.5" />
       </a>
 
       <p className="text-[11px] leading-relaxed text-slate-500">

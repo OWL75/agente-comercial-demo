@@ -3,6 +3,7 @@
 import { useState, useTransition, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { safeLoginDestination } from "@/lib/security/redirect";
+import { IconSpark } from "@/components/ui/icons";
 
 function LoginForm() {
   const router = useRouter();
@@ -31,36 +32,26 @@ function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900/60 p-8 shadow-2xl shadow-black/40 backdrop-blur"
-      >
-        <div className="mb-6 flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 font-bold text-slate-950">
-            SC
-          </div>
-          <div>
-            <p className="text-sm font-semibold tracking-wide text-slate-100">SISTECOMP</p>
-            <p className="text-xs text-slate-500">Agente Comercial Autónomo</p>
-          </div>
+    <div className="app-backdrop relative flex min-h-screen items-center justify-center overflow-hidden px-4">
+      <div className="pointer-events-none absolute left-1/2 top-1/3 h-[420px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal-400/10 blur-3xl" />
+      <form onSubmit={handleSubmit} className="surface relative w-full max-w-sm p-8 animate-fade-up">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-teal-300 via-cyan-400 to-indigo-500 text-slate-950 shadow-xl shadow-teal-500/25">
+            <IconSpark className="h-6 w-6" />
+          </span>
+          <p className="mt-4 text-lg font-semibold tracking-tight text-white">Agente Comercial Autónomo</p>
+          <p className="mt-1 text-sm text-slate-400">SISTECOMP · Nova Distribution</p>
         </div>
-        <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">
-          Contraseña de acceso
-        </label>
+        <label className="mb-2 block text-xs font-medium text-slate-400">Contraseña de acceso</label>
         <input
           type="password"
           autoFocus
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mb-4 w-full rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+          className="input mb-4"
         />
-        {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-        <button
-          type="submit"
-          disabled={pending}
-          className="w-full rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-60"
-        >
+        {error && <p className="mb-4 text-sm text-rose-400">{error}</p>}
+        <button type="submit" disabled={pending} className="btn btn-primary w-full">
           {pending ? "Verificando…" : "Entrar"}
         </button>
       </form>

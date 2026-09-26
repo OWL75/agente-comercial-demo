@@ -120,3 +120,65 @@ export async function getConversationClosingStats(
     humanApprovals: Number(row.human_approvals),
   };
 }
+
+export type ConversationListItem = {
+  id: string;
+  customerName: string;
+  stage: string;
+  startedAt: string;
+  endedAt: string | null;
+  lastBody: string | null;
+  lastSender: "customer" | "agent" | null;
+  lastAt: string | null;
+  messageCount: number;
+  hasPendingApproval: boolean;
+  orderTotal: number | null;
+};
+
+/** Conversations with their latest message, most recent activity first. */
+export async function listConversations(limit = 50): Promise<ConversationListItem[]> {
+  const rows = await sql<
+    Array<{
+      id: string;
+      customer_name: string;
+      stage: string;
+      started_at: string;
+      ended_at: string | null;
+      last_body: string | null;
+      last_sender: "customer" | "agent" | null;
+      last_at: string | null;
+      message_count: number;
+      has_pending: boolean;
+      order_total: string | null;
+    }>
+  >`
+    select
+      conv.id, conv.stage, conv.started_at, conv.ended_at, c.name as customer_name,
+      lm.body as last_body, lm.sender as last_sender, lm.created_at as last_at,
+      (select count(*) from agente_comercial.messages m where m.conversation_id = conv.id and m.sender <> 'system')::int as message_count,
+      exists(select 1 from agente_comercial.approvals a where a.conversation_id = conv.id and a.status = 'pending') as has_pending,
+      (select o.total from agente_comercial.orders o where o.conversation_id = conv.id order by o.created_at desc limit 1) as order_total
+    from agente_comercial.conversations conv
+    join agente_comercial.customers c on c.id = conv.customer_id
+    left join lateral (
+      select m.body, m.sender, m.created_at from agente_comercial.messages m
+      where m.conversation_id = conv.id and m.sender <> 'system'
+      order by m.created_at desc limit 1
+    ) lm on true
+    order by coalesce(lm.created_at, conv.started_at) desc
+    limit ${limit}
+  `;
+  return rows.map((r) => ({
+    id: r.id,
+    customerName: r.customer_name,
+    stage: r.stage,
+    startedAt: r.started_at,
+    endedAt: r.ended_at,
+    lastBody: r.last_body,
+    lastSender: r.last_sender,
+    lastAt: r.last_at,
+    messageCount: Number(r.message_count),
+    hasPendingApproval: r.has_pending,
+    orderTotal: r.order_total != null ? Number(r.order_total) : null,
+  }));
+}

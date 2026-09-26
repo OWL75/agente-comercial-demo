@@ -3,16 +3,10 @@
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
 
-function ActionButton({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className: string;
-}) {
+function ActionButton({ children, className }: { children: React.ReactNode; className: string }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} className={`${className} disabled:cursor-wait disabled:opacity-60`}>
+    <button type="submit" disabled={pending} className={`btn ${className}`}>
       {pending ? "Procesando…" : children}
     </button>
   );
@@ -32,10 +26,10 @@ export function ApprovalActions({
   const [showModify, setShowModify] = useState(false);
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-2.5">
       <form action={onApprove}>
-        <ActionButton className="rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
-          APROBAR
+        <ActionButton className="bg-gradient-to-b from-emerald-300 to-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/25 hover:brightness-110">
+          Aprobar
         </ActionButton>
       </form>
 
@@ -47,33 +41,21 @@ export function ApprovalActions({
             step="any"
             defaultValue={suggestedValue ?? undefined}
             autoFocus
-            className="w-28 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+            className="input !w-28"
           />
-          <ActionButton className="rounded-lg bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-400">
-            Confirmar
-          </ActionButton>
-          <button
-            type="button"
-            onClick={() => setShowModify(false)}
-            className="text-sm text-slate-500 hover:text-slate-300"
-          >
+          <ActionButton className="btn-secondary">Confirmar</ActionButton>
+          <button type="button" onClick={() => setShowModify(false)} className="px-2 text-sm text-slate-500 hover:text-slate-300">
             Cancelar
           </button>
         </form>
       ) : (
-        <button
-          type="button"
-          onClick={() => setShowModify(true)}
-          className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-medium text-slate-300 hover:border-slate-500 hover:text-slate-100"
-        >
-          MODIFICAR
+        <button type="button" onClick={() => setShowModify(true)} className="btn btn-secondary">
+          Modificar
         </button>
       )}
 
       <form action={onReject}>
-        <ActionButton className="rounded-lg border border-red-500/40 px-5 py-2.5 text-sm font-semibold text-red-400 hover:bg-red-500/10">
-          RECHAZAR
-        </ActionButton>
+        <ActionButton className="btn-danger">Rechazar</ActionButton>
       </form>
     </div>
   );

@@ -3,16 +3,15 @@
 import { useFormStatus } from "react-dom";
 import type { FollowUpStep } from "@/lib/agent/follow-up-sequence";
 import type { FollowUpAgreement } from "@/lib/agent/follow-up-data";
+import { StepList } from "@/components/ui/steps";
+import { IconClock } from "@/components/ui/icons";
 
 function SimulateButton({ label = "Simular que el cliente no responde" }: { label?: string }) {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-amber-400 disabled:cursor-wait disabled:opacity-70"
-    >
-      {pending ? "El agente está redactando…" : label}
+    <button type="submit" disabled={pending} className="btn btn-warning w-full !py-2">
+      <IconClock className="h-4 w-4" />
+      {pending ? "Fernán está redactando…" : label}
     </button>
   );
 }
@@ -35,42 +34,31 @@ export function FollowUpPanel({
   agreedAction: () => Promise<void>;
 }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {agreed && (
-        <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
-          <p className="text-xs font-medium text-emerald-300">Retomar lo acordado · {agreed.date}</p>
-          {agreed.action && <p className="text-[11px] leading-relaxed text-slate-300">{agreed.action}</p>}
+        <div className="space-y-2.5 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.06] p-3.5">
+          <p className="text-xs font-semibold text-emerald-300">Retomar lo acordado · {agreed.date}</p>
+          {agreed.action && <p className="text-xs leading-relaxed text-slate-300">{agreed.action}</p>}
           <form action={agreedAction}>
             <SimulateButton label="Simular que llegó el momento acordado" />
           </form>
         </div>
       )}
-      <ol className="space-y-2">
-        {steps.map((s) => {
-          const sent = s.step <= sentCount;
-          const next = s.step === sentCount + 1 && canSimulate;
-          return (
-            <li key={s.step} className="flex gap-2 text-xs">
-              <span className={sent ? "text-emerald-400" : next ? "text-amber-400" : "text-slate-600"}>
-                {sent ? "✓" : next ? "●" : "○"}
-              </span>
-              <div>
-                <p className={sent || next ? "font-medium text-slate-100" : "text-slate-400"}>
-                  {s.step}. {s.title}
-                </p>
-                <p className="text-[11px] text-slate-500">{s.productionDelay}</p>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+      <StepList
+        steps={steps.map((s) => ({
+          key: s.step,
+          title: s.title,
+          detail: s.productionDelay,
+          state: s.step <= sentCount ? "sent" : s.step === sentCount + 1 && canSimulate ? "next" : "later",
+        }))}
+      />
 
       {canSimulate ? (
         <form action={action}>
           <SimulateButton />
         </form>
       ) : (
-        <p className="rounded-lg bg-slate-800/60 px-3 py-2 text-xs text-slate-400">{blockedReason}</p>
+        <p className="rounded-xl bg-white/[0.04] px-3 py-2.5 text-xs text-slate-400 ring-1 ring-inset ring-white/[0.06]">{blockedReason}</p>
       )}
 
       <p className="text-[11px] leading-relaxed text-slate-500">

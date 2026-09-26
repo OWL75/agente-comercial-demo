@@ -5,6 +5,7 @@ export const SIGNAL_LABELS: Record<string, string> = {
   reduccion_frecuencia: "Reducción de frecuencia",
   caida_ticket: "Caída de ticket promedio",
   cambio_competidor: "Posible cambio a competidor",
+  recompra_atrasada: "Recompra atrasada",
 };
 
 export const STATUS_LABELS: Record<OpportunityStatus, string> = {
@@ -57,4 +58,23 @@ export const STATUS_STYLES: Record<OpportunityStatus, string> = {
   esperando_aprobacion: "bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/30",
   cerrada: "bg-emerald-500/10 text-emerald-300 ring-1 ring-inset ring-emerald-500/30",
   perdida: "bg-slate-700/30 text-slate-500 ring-1 ring-inset ring-slate-600/30",
+};
+
+/** The commercial path of a conversation, in order (for the stage stepper). */
+export const CONVERSATION_STAGE_ORDER = [
+  "discovery",
+  "objection_handling",
+  "negotiating",
+  "awaiting_approval",
+  "closing",
+  "closed",
+] as const;
+
+export const CONVERSATION_STAGE_STYLES: Record<string, string> = {
+  discovery: "bg-sky-500/10 text-sky-300 ring-1 ring-inset ring-sky-500/25",
+  objection_handling: "bg-violet-500/10 text-violet-300 ring-1 ring-inset ring-violet-500/25",
+  negotiating: "bg-fuchsia-500/10 text-fuchsia-300 ring-1 ring-inset ring-fuchsia-500/25",
+  awaiting_approval: "bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/25",
+  closing: "bg-teal-500/10 text-teal-300 ring-1 ring-inset ring-teal-500/25",
+  closed: "bg-emerald-500/10 text-emerald-300 ring-1 ring-inset ring-emerald-500/25",
 };
