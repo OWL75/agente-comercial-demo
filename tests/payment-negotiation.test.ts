@@ -567,3 +567,16 @@ describe("real conversation 2026-09-25 01:44 UTC: 'me estás ofreciendo lo mismo
     });
   });
 });
+
+describe("real conversation 2026-09-25 22:33 UTC: one professional question", () => {
+  it("rewrites the price + contado/crédito questionnaire into a single price question", async () => {
+    const ONE = "Entiendo. ¿Qué precio le está ofreciendo su proveedor actual por el Shampoo Professional 1L?";
+    h.script = [
+      say("Lo entiendo; el precio suele ser decisivo. ¿En cuánto le están dejando el Shampoo Professional 1L y se lo manejan de contado o a crédito?"),
+      say(ONE),
+    ];
+    await runAgentTurn(conversationId, "El precio");
+    expect(await agentMessages()).toEqual([ONE]);
+    expect(h.script).toHaveLength(0);
+  });
+});

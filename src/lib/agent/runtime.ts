@@ -23,7 +23,7 @@ import { loadFollowUpContext, type FollowUpAgreement } from "@/lib/agent/follow-
 import { askOwner } from "@/lib/agent/owner-notify";
 import { resolveProductRefs } from "@/lib/tools/catalog";
 import { isRepetition } from "@/lib/agent/follow-up-context";
-import { asksForConfirmation, asksPermissionToConsult, asksPermissionToQuote, hideStockCount, mentionsSavingsAmount, onlyMatchesReference, repeatsOfferList, revealsApproval, soundsPushy, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
+import { asksForConfirmation, asksPermissionToConsult, asksPermissionToQuote, asksPriceAndPaymentTogether, hideStockCount, mentionsSavingsAmount, onlyMatchesReference, repeatsOfferList, revealsApproval, soundsPushy, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
 import { announceOrderToOwner, pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { formatDateEs } from "@/lib/payments/payment-messages";
 
@@ -353,6 +353,20 @@ async function executeAgentLoop(
     response = await untilText(await client.responses.create({ model, instructions, input, tools }));
     if (!response) return "";
     reply = cleanReply(response.output_text ?? "");
+    pendingApproval = await hasPendingApproval();
+    violations = violationsOf(reply);
+  }
+
+  // Price and payment terms in one message read like a questionnaire.
+  if (opts.trigger === "customer_message" && asksPriceAndPaymentTogether(reply)) {
+    await logAudit({ conversationId, category: "system", label: "Respuesta con precio y forma de pago en la misma pregunta: el agente pregunta solo el precio", payload: { draft: reply } });
+    input = input.concat(response.output, [{
+      role: "user",
+      content: "(Nota interna del sistema, nunca la menciones al cliente.) Haz una sola pregunta: el precio que le ofrece su proveedor. No preguntes si paga de contado o a crédito; si su cuenta tiene crédito, lo mencionarás como ventaja al presentar la oferta. Escríbelo en tono profesional y cordial, de usted, sin frases de relleno.",
+    }]);
+    response = await untilText(await client.responses.create({ model, instructions, input, tools }));
+    if (!response) return "";
+    reply = stripZeroDiscount(toWhatsAppText(response.output_text ?? ""));
     pendingApproval = await hasPendingApproval();
     violations = violationsOf(reply);
   }

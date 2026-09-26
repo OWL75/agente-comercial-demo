@@ -249,3 +249,13 @@ const PERMISSION_TO_CONSULT = /¿[^?]*\b(?:quiere|desea|le\s+parece)\s+que\s+(?:
 export function asksPermissionToConsult(text: string): boolean {
   return PERMISSION_TO_CONSULT.test(text);
 }
+
+// "¿En cuánto se lo dejan y se lo manejan de contado o a crédito?": asking the
+// competitor's price and payment terms at once reads like a questionnaire.
+// The price is the one question; credit goes into the offer as an advantage.
+const PRICE_QUESTION = /¿[^?]*\b(?:cu[aá]nto|qu[eé]\s+precio|a\s+c[oó]mo)\b[^?]*\?/i;
+const PAYMENT_QUESTION = /¿[^?]*\bcontado\b[^?]*\?/i;
+
+export function asksPriceAndPaymentTogether(text: string): boolean {
+  return PRICE_QUESTION.test(text) && PAYMENT_QUESTION.test(text);
+}

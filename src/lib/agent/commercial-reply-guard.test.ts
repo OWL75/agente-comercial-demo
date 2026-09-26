@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asksForConfirmation, hideStockCount, repeatsOfferList, revealsApproval, commercialReplyViolations, guardedFallback, mentionsSavingsAmount, onlyMatchesReference, presentsFinalVerifiedOffer, soundsPushy } from "./commercial-reply-guard";
+import { asksForConfirmation, asksPriceAndPaymentTogether, hideStockCount, repeatsOfferList, revealsApproval, commercialReplyViolations, guardedFallback, mentionsSavingsAmount, onlyMatchesReference, presentsFinalVerifiedOffer, soundsPushy } from "./commercial-reply-guard";
 import type { VerifiedOfferResult } from "@/lib/tools/offers";
 
 const ready: VerifiedOfferResult = {
@@ -245,5 +245,18 @@ describe("real conversation 2026-09-25 19:31 UTC: competitor already below the f
     const { asksPermissionToConsult } = await import("./commercial-reply-guard");
     expect(asksPermissionToConsult("Si para usted es indispensable igualar los $17.50, lo reviso con Abdiel, el gerente. ¿Quiere que lo consulte?")).toBe(true);
     expect(asksPermissionToConsult("Lo reviso con Abdiel, el gerente, y le escribo en unos minutos.")).toBe(false);
+  });
+});
+
+describe("real conversation 2026-09-25 22:33 UTC: one professional question, not a questionnaire", () => {
+  it("flags asking the competitor's price and payment terms in the same message", () => {
+    expect(asksPriceAndPaymentTogether("Lo entiendo; el precio suele ser decisivo. ¿En cuánto le están dejando el Shampoo Professional 1L y se lo manejan de contado o a crédito?")).toBe(true);
+    expect(asksPriceAndPaymentTogether("Entiendo. ¿Qué precio le está ofreciendo su proveedor actual? ¿Y le cobra de contado?")).toBe(true);
+  });
+
+  it("lets the price question alone, the offer with credit, and a later payment question through", () => {
+    expect(asksPriceAndPaymentTogether("Entiendo. ¿Qué precio le está ofreciendo su proveedor actual por el Shampoo Professional 1L?")).toBe(false);
+    expect(asksPriceAndPaymentTogether("Le puedo ofrecer $17.65 por unidad, a crédito a 30 días, sin adelantar el pago. ¿Le parece bien así?")).toBe(false);
+    expect(asksPriceAndPaymentTogether("Comprendo. ¿Ese precio es de contado o con crédito?")).toBe(false);
   });
 });
