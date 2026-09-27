@@ -58,12 +58,17 @@ export async function presentBestPrice(conversationId: string, quantity: number,
  * owner for a price below the floor: the agent's conditional close and a yes.
  */
 export async function commitCustomer(conversationId: string, quantity: number, unitPrice = 17.5): Promise<void> {
+  // The WASM clock is coarse: keep the messages in a clear order.
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+  await tick();
   await database.query(
     "insert into agente_comercial.messages (conversation_id, direction, sender, body, created_at) values ($1, 'outbound', 'agent', $2, clock_timestamp())",
-    [conversationId, `Si consigo que Abdiel me apruebe $${unitPrice.toFixed(2)} por unidad, ¿le dejo listo hoy el pedido de ${quantity}?`],
+    [conversationId, `Si consigo que Abdiel me apruebe ${unitPrice.toFixed(2)} por unidad, ¿le dejo listo hoy el pedido de ${quantity}?`],
   );
+  await tick();
   await database.query(
     "insert into agente_comercial.messages (conversation_id, direction, sender, body, created_at) values ($1, 'inbound', 'customer', 'Sí', clock_timestamp())",
     [conversationId],
   );
+  await tick();
 }

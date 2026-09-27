@@ -126,9 +126,12 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
   });
   it("real conversation 2026-09-27 02:24 UTC: 'puedo considerarlo' is no commitment; 'te lo compro' is", async () => {
     await presentBestPrice(conversationId, 200);
-    const say = (sender: "agent" | "customer", body: string) => database.query(
-      "insert into agente_comercial.messages (conversation_id, direction, sender, body) values ($1, $2, $3, $4)",
-      [conversationId, sender === "agent" ? "outbound" : "inbound", sender, body]);
+    const say = async (sender: "agent" | "customer", body: string) => {
+      await new Promise((resolve) => setTimeout(resolve, 5)); // coarse WASM clock
+      await database.query(
+        "insert into agente_comercial.messages (conversation_id, direction, sender, body) values ($1, $2, $3, $4)",
+        [conversationId, sender === "agent" ? "outbound" : "inbound", sender, body]);
+    };
     await say("agent", "Ya lo revisé con Abdiel y pude conseguirle $17.50 por unidad. ¿Se lo dejo listo para esta semana?");
     await say("customer", "Si me lo dejas a 850 puedo considerarlo");
     await expect(requestApproval(request())).rejects.toThrow("compromiso");
