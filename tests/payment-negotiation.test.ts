@@ -283,7 +283,7 @@ describe("payment collection without a human", () => {
     expect(h.telegram.filter((m) => m.text.startsWith("💰 Pago recibido"))).toHaveLength(1);
   });
 
-  it("sends a payment problem to the owner, and the owner's answer reaches the customer", async () => {
+  it("sends a payment problem to the owner, and the owner's answer reaches the customer once he confirms it", async () => {
     const token = await orderAndToken();
     await reportPaymentIssue(token, "Prefiero pagar con cheque a 45 días");
 
@@ -295,6 +295,12 @@ describe("payment collection without a human", () => {
     h.script = [say("Ya lo consulté con Abdiel: podemos recibir su cheque, pero el plazo se mantiene en 30 días. ¿Le funciona así?")];
     await handleTelegramUpdate({
       update_id: 1, message: { message_id: 9, chat: { id: 555001 }, from: { id: 555001 }, text: "Cheque sí, pero a 30 días", reply_to_message: { message_id: question.messageId } },
+    });
+    const preview = h.telegram.at(-1)!;
+    expect(preview.text).toContain("Ya lo consulté con Abdiel: podemos recibir su cheque");
+    const send = (preview.markup as { inline_keyboard: Array<Array<{ callback_data: string }>> }).inline_keyboard[0][0].callback_data;
+    await handleTelegramUpdate({
+      update_id: 2, callback_query: { id: "cb-send", from: { id: 555001 }, data: send, message: { message_id: preview.messageId, chat: { id: 555001 } } },
     });
     expect((await agentMessages()).at(-1)).toMatch(/^Ya lo consulté con Abdiel/);
   });

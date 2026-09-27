@@ -1,6 +1,6 @@
 import "server-only";
 import type OpenAI from "openai";
-import { sql } from "@/lib/db";
+import { sql, toJsonb } from "@/lib/db";
 import { getAgentModel, getOpenAiClient } from "@/lib/agent/openai-client";
 import { getOpenAiToolDefinitions, getTool, type ToolContext } from "@/lib/agent/tools";
 import { logAudit } from "@/lib/agent/audit";
@@ -25,6 +25,7 @@ import { askOwner } from "@/lib/agent/owner-notify";
 import { resolveProductRefs } from "@/lib/tools/catalog";
 import { isRepetition } from "@/lib/agent/follow-up-context";
 import { asksForConfirmation, closesOnOffer, asksPermissionToConsult, asksPermissionToQuote, asksPriceAndPaymentTogether, hideStockCount, mentionsSavingsAmount, onlyMatchesReference, repeatsOfferList, revealsApproval, soundsPushy, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
+import { askOwnerToCorrect, askOwnerToSendDraft } from "@/lib/agent/owner-notify";
 import { announceOrderToOwner, pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { formatDateEs } from "@/lib/payments/payment-messages";
 
@@ -34,6 +35,12 @@ type TurnOptions = AgentTurnOptions & {
   followUpContext?: FollowUpContext;
   /** The agent's message just before this customer message. */
   previousAgentMessage?: string;
+  /**
+   * The reply interprets the owner's free-text instruction: the owner sees
+   * exactly what would go to the customer, with its figures, and sends it
+   * with a tap (or corrects it) before the customer gets anything.
+   */
+  holdForOwner?: boolean;
 };
 
 const REPETITION_NOTE = (customerMessage: string) =>
@@ -74,6 +81,111 @@ async function latestReadyOffer(conversationId: string): Promise<{ status: "read
     order by created_at desc limit 1
   `;
   return row ? { status: "ready", total: Number(row.total), netUnitPrice: Number(row.net) } : null;
+}
+
+/**
+ * Saves the agent's reply as the conversation's message, records a presented
+ * offer and sends it by WhatsApp. False when the customer opted out.
+ */
+async function deliverReply(
+  conversationId: string,
+  context: ConversationContext,
+  reply: string,
+  presentedOffer: VerifiedOfferResult | null,
+): Promise<boolean> {
+  await sql`
+    insert into agente_comercial.messages (conversation_id, direction, sender, body)
+    values (${conversationId}, 'outbound', 'agent', ${reply})
+  `;
+
+  // Record presentation only after the exact customer-visible message exists.
+  // create_sandbox_order uses this audit row as its server-side precondition.
+  if (presentedOffer) {
+    await logAudit({
+      conversationId,
+      category: "policy_check",
+      label: "Oferta verificada presentada para confirmación",
+      payload: { offer: presentedOffer },
+    });
+  }
+
+  // Best-effort real send: a WhatsApp outage must never break the in-app
+  // conversation, which already has the message and keeps working either
+  // way — so failures are logged, not thrown.
+  if (isWhatsAppConfigured() && context.customerPhone && reply) {
+    try {
+      if (await isCustomerSuppressed(context.customerId)) return false;
+      stopTyping(conversationId);
+      await sendWhatsAppMessage(context.customerPhone, reply);
+    } catch (err) {
+      await logAudit({
+        conversationId,
+        category: "system",
+        label: `No se pudo enviar el mensaje por WhatsApp real: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+  return true;
+}
+
+const HELD_LABEL = "Borrador en espera del visto bueno del dueño";
+const HELD_SENT_LABEL = "Borrador enviado al cliente con el visto bueno del dueño";
+
+/** Stores the reply and asks the owner to send or correct it. False when Telegram is unavailable. */
+async function holdReplyForOwner(
+  conversationId: string,
+  customerName: string,
+  reply: string,
+  presentedOffer: VerifiedOfferResult | null,
+): Promise<boolean> {
+  const [held] = await sql<Array<{ id: string }>>`
+    insert into agente_comercial.audit_log (conversation_id, category, label, payload)
+    values (${conversationId}, 'system', ${HELD_LABEL}, ${toJsonb({ heldReply: { reply, offer: presentedOffer } })})
+    returning id
+  `;
+  const sent = await askOwnerToSendDraft(conversationId, held.id, customerName, reply, presentedOffer);
+  if (!sent) {
+    await sql`delete from agente_comercial.audit_log where id = ${held.id}`;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * The owner tapped "Enviar" on a held reply. Refused when it is not the
+ * latest draft, was already sent, or the customer wrote after it.
+ */
+export async function sendHeldReply(draftId: string): Promise<{ reply: string; customerName: string } | { error: string }> {
+  const [draft] = await sql<Array<{ conversation_id: string; payload: { heldReply?: { reply: string; offer: VerifiedOfferResult | null } }; created_at: Date }>>`
+    select conversation_id, payload, created_at from agente_comercial.audit_log where id = ${draftId} and label = ${HELD_LABEL}
+  `;
+  if (!draft?.payload.heldReply) return { error: "No encontré ese borrador." };
+  const conversationId = draft.conversation_id;
+  const [state] = await sql<Array<{ newer_draft: boolean; already_sent: boolean; customer_wrote: boolean }>>`
+    select
+      exists(select 1 from agente_comercial.audit_log where conversation_id = ${conversationId} and label = ${HELD_LABEL} and created_at > ${draft.created_at}) as newer_draft,
+      exists(select 1 from agente_comercial.audit_log where conversation_id = ${conversationId} and label = ${HELD_SENT_LABEL} and payload->>'draftId' = ${draftId}) as already_sent,
+      exists(select 1 from agente_comercial.messages where conversation_id = ${conversationId} and sender = 'customer' and created_at > ${draft.created_at}) as customer_wrote
+  `;
+  if (state.already_sent) return { error: "Ese mensaje ya se envió." };
+  if (state.newer_draft) return { error: "Hay un borrador más reciente; usa ese." };
+  if (state.customer_wrote) return { error: "El cliente escribió después de este borrador; ya no lo envío." };
+  const context = await loadConversationContext(conversationId);
+  const { reply, offer } = draft.payload.heldReply;
+  await deliverReply(conversationId, context, reply, offer);
+  await logAudit({ conversationId, category: "system", label: HELD_SENT_LABEL, payload: { draftId } });
+  return { reply, customerName: context.customerName };
+}
+
+/** The owner tapped "Corregir": the draft is discarded and he is asked for the exact instruction. */
+export async function discardHeldReply(draftId: string): Promise<boolean> {
+  const [draft] = await sql<Array<{ conversation_id: string }>>`
+    select conversation_id from agente_comercial.audit_log where id = ${draftId} and label = ${HELD_LABEL}
+  `;
+  if (!draft) return false;
+  await logAudit({ conversationId: draft.conversation_id, category: "system", label: "El dueño pidió corregir el borrador; no se envió al cliente", payload: { draftId } });
+  await askOwnerToCorrect(draft.conversation_id);
+  return true;
 }
 
 /** WhatsApp id of the customer's latest message, to show "escribiendo…" against it. */
@@ -489,38 +601,13 @@ async function executeAgentLoop(
     reply = guardedFallback(pendingApproval, ownerConsulted);
   } else presentedVerifiedOffer = presentsFinalVerifiedOffer(reply, verifiedOffer);
 
-  await sql`
-    insert into agente_comercial.messages (conversation_id, direction, sender, body)
-    values (${conversationId}, 'outbound', 'agent', ${reply})
-  `;
-
-  // Record presentation only after the exact customer-visible message exists.
-  // create_sandbox_order uses this audit row as its server-side precondition.
-  if (presentedVerifiedOffer) {
-    await logAudit({
-      conversationId,
-      category: "policy_check",
-      label: "Oferta verificada presentada para confirmación",
-      payload: { offer: verifiedOffer },
-    });
+  const presentedOffer = presentedVerifiedOffer ? verifiedOffer : null;
+  if (opts.holdForOwner && reply && !violations.length &&
+      await holdReplyForOwner(conversationId, context.customerName, reply, presentedOffer)) {
+    stopTyping(conversationId);
+    return "";
   }
-
-  // Best-effort real send: a WhatsApp outage must never break the in-app
-  // conversation, which already has the message and keeps working either
-  // way — so failures are logged, not thrown.
-  if (isWhatsAppConfigured() && context.customerPhone && reply) {
-    try {
-      if (await isCustomerSuppressed(context.customerId)) return "";
-      stopTyping(conversationId);
-      await sendWhatsAppMessage(context.customerPhone, reply);
-    } catch (err) {
-      await logAudit({
-        conversationId,
-        category: "system",
-        label: `No se pudo enviar el mensaje por WhatsApp real: ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
-  }
+  if (!(await deliverReply(conversationId, context, reply, presentedOffer))) return "";
 
   // Collecting payment needs no human: the payment link goes out as its own
   // message right after the confirmation, and the owner is told on Telegram.
@@ -668,11 +755,11 @@ export async function resumeAfterOwnerAnswer(
     ...history,
     {
       role: "system" as const,
-      content: `Consultaste al dueño: "${question}". Su respuesta: "${answer}". El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo revisaste con Abdiel, el gerente, y sigue la conversación con esa indicación, sin presionar. Todo precio, descuento, crédito o entrega que menciones debe salir de prepare_verified_offer; si la indicación excede la política, las herramientas lo rechazarán y deberás ofrecer la mejor alternativa permitida. No cites su mensaje literal ni digas que algo "se aprobó".`,
+      content: `Consultaste al dueño: "${question}". Su respuesta: "${answer}". Antes de enviarse, tu mensaje se le mostrará a él para que lo confirme, así que interpreta su indicación con exactitud: si menciona "ese precio", "el mejor precio" o "lo que pide", decide a qué cifra concreta se refiere según la conversación (lo que el cliente pidió o tu mejor precio) y escríbela. Si da un precio por debajo de tu mejor precio, prepara la oferta a esa cifra y, si requiere aprobación, solicítala con request_approval (él la aprueba con un botón). Nunca digas que Abdiel no aprobó o no pudo algo que él no rechazó. El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo revisaste con Abdiel, el gerente, y sigue la conversación con esa indicación, sin presionar. Todo precio, descuento, crédito o entrega que menciones debe salir de prepare_verified_offer; si la indicación excede la política, las herramientas lo rechazarán y deberás ofrecer la mejor alternativa permitida. No cites su mensaje literal ni digas que algo "se aprobó".`,
     },
   ];
   await startTyping(conversationId, await lastCustomerMessageId(conversationId));
-  const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" })
+  const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision", holdForOwner: true })
     .finally(() => stopTyping(conversationId));
   return { reply };
 }

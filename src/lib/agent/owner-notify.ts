@@ -1,4 +1,5 @@
 import "server-only";
+import { formatDraftForOwner } from "@/lib/agent/owner-messages";
 import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/agent/audit";
 import { getApprovalDetail } from "@/lib/db/approvals";
@@ -240,4 +241,44 @@ export async function notifyOwner(conversationId: string | null, text: string): 
     });
     return false;
   }
+}
+
+/**
+ * Shows the owner the exact message his free-text instruction produced, with
+ * its figures, and lets him send it or correct it with a tap.
+ */
+export async function askOwnerToSendDraft(
+  conversationId: string,
+  draftId: string,
+  customerName: string,
+  reply: string,
+  offer: VerifiedOfferResult | null,
+): Promise<boolean> {
+  const chatId = await ready(conversationId, "Borrador para el dueño");
+  if (!chatId) return false;
+  try {
+    await sendTelegramMessage(chatId, formatDraftForOwner({ customerName, reply, offer }), {
+      inline_keyboard: [[
+        { text: "✅ Enviar", callback_data: `sd:${draftId}` },
+        { text: "✏️ Corregir", callback_data: `cd:${draftId}` },
+      ]],
+    });
+    return true;
+  } catch (err) {
+    await logAudit({
+      conversationId,
+      category: "system",
+      label: `No se pudo mostrar el borrador al dueño: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300),
+    });
+    return false;
+  }
+}
+
+/** After "Corregir": asks for the exact instruction, answered like any consult. */
+export async function askOwnerToCorrect(conversationId: string): Promise<void> {
+  const chatId = await ownerChatId();
+  if (!chatId) return;
+  const question = "¿Qué le digo entonces? Escríbeme la indicación exacta; si es un precio, con la cifra (por ejemplo «dale $17.00 de contado» o «mantén $17.58»).";
+  const { messageId } = await sendTelegramMessage(chatId, question, { force_reply: true, input_field_placeholder: "Tu indicación exacta…" });
+  await recordLink(messageId, { purpose: "question", conversationId, question }, "Se pidió al dueño una indicación exacta.");
 }

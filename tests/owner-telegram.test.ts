@@ -147,7 +147,7 @@ describe("the real dead end: 'Déjame validar…' never came back", () => {
     expect(h.script).toHaveLength(0);
   });
 
-  it("when it still can't verify, asks the owner and writes to the customer as soon as the owner answers", async () => {
+  it("when it still can't verify, asks the owner and, after he confirms the exact message, writes to the customer", async () => {
     await pairOwner();
     h.script = [say("Te lo dejo en $17.50."), say("Te lo dejo en $17.50.")];
     await runAgentTurn(conversationId, REAL_MESSAGE);
@@ -164,10 +164,54 @@ describe("the real dead end: 'Déjame validar…' never came back", () => {
     ];
     await message(OWNER, { text: "Ofrécele 4% y entrega express, vale la pena recuperarlo", reply_to_message: { message_id: question.messageId } });
 
-    const followUp = (await agentMessages()).at(-1)!;
-    expect(followUp).toMatch(/^Ya lo consulté/);
-    expect(h.telegram.at(-1)!.text).toContain("Ya le escribí al cliente");
-    expect(h.telegram.at(-1)!.text).toContain("$17.76");
+    // Nothing reaches the customer yet: the owner sees the exact message and figures.
+    expect((await agentMessages()).at(-1)).toBe(guardedFallback(false, true));
+    const preview = h.telegram.at(-1)!;
+    expect(preview.text).toMatch(/^Entendí tu indicación así\. Esto le escribiría a/);
+    expect(preview.text).toContain("$17.76 c/u × 50 Shampoo Professional 1L = $888.00");
+    const send = (preview.markup as { inline_keyboard: Array<Array<{ callback_data: string }>> }).inline_keyboard[0][0].callback_data;
+    expect(send).toMatch(/^sd:/);
+
+    await tap(OWNER, send, preview.messageId);
+    expect((await agentMessages()).at(-1)).toMatch(/^Ya lo consulté/);
+    expect(h.telegram.at(-1)!.text).toMatch(/^✅ Enviado a/);
+    // A second tap does not send it twice.
+    await tap(OWNER, send, preview.messageId);
+    expect((await agentMessages()).filter((m) => m.startsWith("Ya lo consulté"))).toHaveLength(1);
+  });
+
+  it("real case 2026-09-27 13:17 UTC: 'Dale ese precio' — the owner corrects the draft before the customer sees it", async () => {
+    await pairOwner();
+    h.script = [say("Te lo dejo en $17.00."), say("Te lo dejo en $17.00.")];
+    await runAgentTurn(conversationId, "Si puede ser");
+    const question = h.telegram.at(-1)!;
+
+    // The agent misreads "ese precio" as its own best price.
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: SKU, quantity: 50, netUnitPrice: 17.58, deliveryHours: 24 })),
+      say("Ya lo revisé con Abdiel: le puedo dejar las 50 unidades a $17.58 por unidad, total $879.00, con entrega en 24 horas. ¿Se lo dejo listo?"),
+    ];
+    await message(OWNER, { text: "Dale ese precio", reply_to_message: { message_id: question.messageId } });
+    const preview = h.telegram.at(-1)!;
+    expect(preview.text).toContain("$17.58 c/u × 50");
+    const correct = (preview.markup as { inline_keyboard: Array<Array<{ callback_data: string }>> }).inline_keyboard[0][1].callback_data;
+    expect(correct).toMatch(/^cd:/);
+
+    await tap(OWNER, correct, preview.messageId);
+    const ask = h.telegram.at(-1)!;
+    expect(ask.text).toMatch(/^¿Qué le digo entonces\?/);
+    expect(ask.markup).toMatchObject({ force_reply: true });
+    expect((await agentMessages()).some((m) => m.includes("$17.58"))).toBe(false);
+
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: SKU, quantity: 50, netUnitPrice: 17.65, deliveryHours: 24 })),
+      say("Ya lo revisé con Abdiel: le puedo dejar las 50 unidades a $17.65 por unidad, total $882.50, con entrega en 24 horas. ¿Se lo dejo listo?"),
+    ];
+    await message(OWNER, { text: "Dale $17.65", reply_to_message: { message_id: ask.messageId } });
+    const second = h.telegram.at(-1)!;
+    expect(second.text).toContain("$17.65 c/u × 50");
+    await tap(OWNER, (second.markup as { inline_keyboard: Array<Array<{ callback_data: string }>> }).inline_keyboard[0][0].callback_data, second.messageId);
+    expect((await agentMessages()).at(-1)).toMatch(/\$17\.65 por unidad/);
   });
 });
 

@@ -196,7 +196,8 @@ export function formatCaseForOwner(c: OwnerCase, ask: { question: string; draft?
   if (suggestion) lines.push("", `Lo que yo haría: ${suggestion}`);
   if (ask.draft) lines.push("", `Lo que pensaba responderle: «${clip(ask.draft, 400)}»`);
 
-  lines.push("", "Respóndeme aquí con lo que decidas (por ejemplo «dale el mejor precio», «mantén el precio» o «déjalo para la otra semana») y le escribo al cliente.");
+  const keep = c.floorUnitPrice != null ? `«mantén ${money(c.floorUnitPrice)}»` : "«mantén el precio»";
+  lines.push("", `Respóndeme aquí con lo que decidas; si es un precio, con la cifra (por ejemplo «dale $X c/u de contado», ${keep} o «déjalo para la otra semana»). Antes de escribirle al cliente te muestro el mensaje para que lo confirmes.`);
   // Telegram's hard limit is 4096 characters.
   return clip(lines.join("\n"), 4000);
 }
@@ -210,4 +211,14 @@ export function formatQuestionForOwner(args: { customerName: string; question: s
     "",
     "Responde a este mensaje con tu indicación y se la paso al cliente.",
   ].join("\n");
+}
+
+/** What the owner confirms before a message from his instruction reaches the customer. */
+export function formatDraftForOwner(d: { customerName: string; reply: string; offer: { netUnitPrice: number; quantity: number; productName: string; total: number; creditTerms: string } | null }): string {
+  const lines = [`Entendí tu indicación así. Esto le escribiría a ${d.customerName}:`, "", `«${clip(d.reply, 1500)}»`];
+  if (d.offer) {
+    lines.push("", `Precio: ${money(d.offer.netUnitPrice)} c/u × ${d.offer.quantity} ${d.offer.productName} = ${money(d.offer.total)} · ${d.offer.creditTerms === "contado" ? "de contado" : `crédito ${d.offer.creditTerms}`}`);
+  }
+  lines.push("", "¿Lo envío? Si no es lo que querías, toca «Corregir» y dime la cifra exacta.");
+  return clip(lines.join("\n"), 4000);
 }

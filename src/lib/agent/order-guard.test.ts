@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertOrderAllowed, explainNonConfirmation, explainNonConfirmationInContext } from "@/lib/agent/order-guard";
+import { assertOrderAllowed, customerCommitted, explainNonConfirmation, explainNonConfirmationInContext } from "@/lib/agent/order-guard";
 
 describe("order guard", () => {
   it.each([
@@ -59,4 +59,24 @@ describe("confirmation in context", () => {
     "never accepts %s, even answering a confirmation request",
     (message) => expect(explainNonConfirmationInContext(message, true)).not.toBeNull(),
   );
+});
+
+describe("commitment before asking Abdiel for a special price", () => {
+  const conditional = "Entiendo. $17.00 por unidad sería un precio especial de contado. Si consigo que Abdiel, el gerente, me lo autorice para las 50 unidades, ¿le dejo listo hoy el pedido con entrega mañana?";
+
+  it("real case 2026-09-27 13:16 UTC: 'Si puede ser' to the conditional close is enough to ask Abdiel", () => {
+    expect(customerCommitted("Si puede ser", conditional)).toBe(true);
+    expect(customerCommitted("Sí, dale", conditional)).toBe(true);
+  });
+
+  it("without a yes, or with a no, it is not a commitment", () => {
+    expect(customerCommitted("Puede ser", conditional)).toBe(false);
+    expect(customerCommitted("Tal vez, lo veo", conditional)).toBe(false);
+    expect(customerCommitted("Si me lo dejas a 850 puedo considerarlo", "¿Se lo dejo listo?")).toBe(false);
+    expect(customerCommitted("Todavía no", conditional)).toBe(false);
+  });
+
+  it("an outright purchase counts without the question", () => {
+    expect(customerCommitted("Si me lo dejas a 17.00 te lo compro", null)).toBe(true);
+  });
 });

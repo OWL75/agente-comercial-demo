@@ -59,7 +59,11 @@ const PURCHASE_INTENT = /\b(?:te|le|se|l[oa]s?)\s+(?:l[oa]s?\s+)?compr(?:o|amos)
  */
 export function customerCommitted(customerMessage: string, previousAgentMessage: string | null): boolean {
   const text = customerMessage.toLowerCase().normalize("NFC");
-  if (NEGATED.test(text) || HESITANT.test(text)) return false;
+  if (NEGATED.test(text)) return false;
+  // "Sí, puede ser" to "Si consigo que Abdiel me apruebe $17.00, ¿le dejo listo el pedido?"
+  // is enough to ask Abdiel: the order still needs its own confirmation.
+  if (previousAgentMessage && CONDITIONAL_CLOSE.test(previousAgentMessage) && /^\s*s[ií]+(?=$|[\s,.;:!¡?¿])/.test(text)) return true;
+  if (HESITANT.test(text)) return false;
   if (PURCHASE_INTENT.test(text)) return true;
   return !!previousAgentMessage && CONDITIONAL_CLOSE.test(previousAgentMessage) && AFFIRMATIVE.test(text);
 }

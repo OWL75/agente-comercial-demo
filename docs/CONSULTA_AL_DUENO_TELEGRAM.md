@@ -54,3 +54,14 @@ La indicación del dueño orienta al agente, pero no pasa por encima de la polí
 - **Ventana de 24 h de WhatsApp:** si el dueño tarda más de 24 horas desde el último mensaje del cliente, WhatsApp en modo Meta solo admite plantillas aprobadas. El mensaje de "ya lo consulté" fallaría y quedaría auditado. Hace falta registrar una plantilla, por ejemplo `resultado_consulta`.
 - **Recordatorios al dueño:** si el dueño no responde, no se le recuerda automáticamente. Requiere un planificador.
 - **Modelo real:** la calidad de la reescritura y de los mensajes al cliente depende del modelo y todavía no se probó con el modelo real.
+
+## Abdiel confirma el mensaje antes de que llegue al cliente (caso 2026-09-27 13:17 UTC)
+
+El cliente pidió $17.00 y respondió "Si puede ser" a la pregunta condicional. Como el sistema no lo tomó como compromiso, Fernán hizo una consulta abierta ("¿Cómo sigo?"). Abdiel respondió "Dale ese precio" pensando en los $17.00, pero el agente lo entendió como su mejor precio y le escribió al cliente $17.58, diciendo además que "no pudo" conseguir los $17.00.
+
+- **"Sí, puede ser" a "Si consigo que Abdiel me apruebe $X…, ¿le dejo listo el pedido?" cuenta como compromiso** para consultar a Abdiel. Abdiel recibe entonces la tarjeta de aprobación con el precio exacto, el total, la condición de contado y los botones. El pedido sigue necesitando su propia confirmación del cliente.
+- **Vista previa obligatoria cuando Abdiel responde con texto libre:** Fernán no le escribe al cliente. A Abdiel le llega "Entendí tu indicación así. Esto le escribiría a…", con el mensaje, el precio × cantidad = total y la condición de pago, y los botones **✅ Enviar** y **✏️ Corregir**.
+  - Enviar: el mensaje sale al cliente (una sola vez). Se rechaza si hay un borrador más nuevo o si el cliente escribió después.
+  - Corregir: no se envía nada y se le pide a Abdiel la indicación exacta, con la cifra.
+- La consulta al dueño ya no sugiere «dale el mejor precio», que era ambiguo. Ahora pide la cifra («dale $X c/u de contado», «mantén $17.58»).
+- Fernán nunca debe decir que Abdiel "no pudo" o "no aprobó" algo que él no rechazó.

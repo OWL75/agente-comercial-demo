@@ -3,7 +3,7 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/agent/audit";
 import { decideApproval } from "@/lib/agent/approval-decision";
-import { resumeAfterOwnerAnswer } from "@/lib/agent/runtime";
+import { discardHeldReply, resumeAfterOwnerAnswer, sendHeldReply } from "@/lib/agent/runtime";
 import { getApprovalDetail } from "@/lib/db/approvals";
 import { answerTelegramCallback, closeTelegramButtons, sendTelegramMessage } from "@/lib/channel/telegram-client";
 import { approvalValueLabel, parseCallbackData, parseOwnerValue, samePhone } from "@/lib/agent/owner-messages";
@@ -74,6 +74,31 @@ async function handlePairing(message: NonNullable<TelegramUpdate["message"]>): P
   return false;
 }
 
+/** "Enviar" / "Corregir" on a message drafted from the owner's instruction. */
+async function handleDraftCallback(
+  query: NonNullable<TelegramUpdate["callback_query"]>,
+  chatId: number,
+  action: "sd" | "cd",
+  draftId: string,
+): Promise<void> {
+  const messageId = query.message?.message_id;
+  if (action === "cd") {
+    await answerTelegramCallback(query.id, "No se envió");
+    if (messageId) await closeTelegramButtons(chatId, messageId, "No se lo envié al cliente.");
+    if (!(await discardHeldReply(draftId))) await sendTelegramMessage(chatId, "No encontré ese borrador.");
+    return;
+  }
+  const result = await sendHeldReply(draftId);
+  if ("error" in result) {
+    await answerTelegramCallback(query.id, result.error);
+    return;
+  }
+  await answerTelegramCallback(query.id, "Enviado");
+  const note = `✅ Enviado a ${result.customerName}:\n${quote(result.reply)}`;
+  if (messageId) await closeTelegramButtons(chatId, messageId, note);
+  else await sendTelegramMessage(chatId, note);
+}
+
 async function reportResult(chatId: number, messageId: number | undefined, note: string, reply: string) {
   const text = reply ? `${note} Ya le escribí al cliente:\n${quote(reply)}` : `${note} No se envió mensaje al cliente (revisa el panel).`;
   if (messageId) await closeTelegramButtons(chatId, messageId, text);
@@ -81,8 +106,13 @@ async function reportResult(chatId: number, messageId: number | undefined, note:
 }
 
 async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"]>): Promise<void> {
-  const parsed = query.data ? parseCallbackData(query.data) : null;
   const chatId = query.message?.chat.id ?? query.from.id;
+  const draft = query.data?.match(/^(sd|cd):([0-9a-f-]{36})$/i);
+  if (draft) {
+    await handleDraftCallback(query, chatId, draft[1] as "sd" | "cd", draft[2]);
+    return;
+  }
+  const parsed = query.data ? parseCallbackData(query.data) : null;
   if (!parsed) {
     await answerTelegramCallback(query.id, "No reconozco esta acción.");
     return;
@@ -123,7 +153,8 @@ async function handleOwnerReply(message: NonNullable<TelegramUpdate["message"]>)
   if (link.purpose === "question") {
     await logAudit({ conversationId: link.conversationId, category: "system", label: `El dueño respondió la consulta: ${text}`.slice(0, 300), payload: { ownerAnswer: text } });
     const { reply } = await resumeAfterOwnerAnswer(link.conversationId, link.question ?? "", text);
-    await reportResult(message.chat.id, undefined, "Gracias.", reply);
+    // Usually the reply is held and the owner already got it to confirm.
+    if (reply) await reportResult(message.chat.id, undefined, "Gracias.", reply);
     return;
   }
   const value = parseOwnerValue(text);
