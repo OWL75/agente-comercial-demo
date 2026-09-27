@@ -11,8 +11,9 @@ vi.mock("@/lib/db", async () => {
   return { sql, toJsonb: sql.json };
 });
 
-const { database } = await import("./sql-harness");
-const { workspaceVersion } = await import("@/lib/live/versions");
+import { database } from "./sql-harness";
+import { workspaceVersion } from "@/lib/live/versions";
+import { GET } from "@/app/api/live/route";
 
 const customerId = "11111111-1111-1111-1111-111111111111";
 const opportunityId = "33333333-3333-3333-3333-333333333333";
@@ -20,7 +21,8 @@ const conversationId = "22222222-2222-2222-2222-222222222222";
 
 beforeAll(async () => {
   await database.exec(await readFile(new URL("./fixtures/demo-schema.sql", import.meta.url), "utf8"));
-});
+  // Starting PostgreSQL/WASM can take a while when the whole suite runs in parallel.
+}, 30_000);
 afterAll(async () => database.close());
 
 beforeEach(async () => {
@@ -92,7 +94,6 @@ describe("workspace version: anything the panel shows changes it", () => {
 
 describe("GET /api/live (Server-Sent Events)", () => {
   it("sends the current version at once and a new event when a message arrives", async () => {
-    const { GET } = await import("@/app/api/live/route");
     const abort = new AbortController();
     const response = await GET(new Request("http://localhost/api/live", { signal: abort.signal }));
     expect(response.headers.get("content-type")).toMatch(/^text\/event-stream/);

@@ -8,14 +8,15 @@ vi.mock("@/lib/db", async () => {
   return { sql, toJsonb: sql.json };
 });
 
-const { database } = await import("./sql-harness");
-const { getValueProposition } = await import("@/lib/tools/value");
+import { database } from "./sql-harness";
+import { getValueProposition } from "@/lib/tools/value";
 
 const customerId = "11111111-1111-1111-1111-111111111111";
 
 beforeAll(async () => {
   await database.exec(await readFile(new URL("./fixtures/demo-schema.sql", import.meta.url), "utf8"));
-});
+  // Starting PostgreSQL/WASM can take a while when the whole suite runs in parallel.
+}, 30_000);
 afterAll(async () => database.close());
 
 beforeEach(async () => {
