@@ -1,4 +1,5 @@
 import "server-only";
+import { customerCommitted } from "@/lib/agent/order-guard";
 import { z } from "zod";
 import { sql, toJsonb } from "@/lib/db";
 import { getActivePolicy } from "@/lib/db/policies";
@@ -92,6 +93,25 @@ export async function requestApproval(input: RequestApprovalInput) {
       if (!floorWritten && (lastOffered == null || lastOffered - floor > 0.004)) {
         throw new Error(
           `Todavía no le ofreciste tu mejor precio. Antes de consultar al gerente, prepara con prepare_verified_offer la oferta a $${floor.toFixed(2)} por unidad (netUnitPrice) y preséntasela con la razón para quedarse con Nova. Solo si insiste en su precio, solicita la aprobación.`,
+        );
+      }
+      // Never give without getting: a price below the agent's floor is only
+      // worth asking for when the customer has said they will buy at it.
+      // One query, so the "before" comparison uses the database timestamps as is.
+      const [lastCustomer] = await tx<Array<{ body: string; agent_before: string | null }>>`
+        select c.body, (
+          select a.body from agente_comercial.messages a
+          where a.conversation_id = c.conversation_id and a.sender = 'agent' and a.created_at < c.created_at
+          order by a.created_at desc limit 1
+        ) as agent_before
+        from agente_comercial.messages c
+        where c.conversation_id = ${input.conversationId} and c.sender = 'customer'
+        order by c.created_at desc limit 1
+      `;
+      if (!lastCustomer || !customerCommitted(lastCustomer.body, lastCustomer.agent_before)) {
+        const asked = input.requestedPct != null ? Math.round(product.unitPrice * (100 - input.requestedPct)) / 100 : null;
+        throw new Error(
+          `Antes de consultar a Abdiel, consigue el compromiso del cliente con una pregunta condicional, por ejemplo: «Si consigo que Abdiel me apruebe ${asked != null ? `$${asked.toFixed(2)}` : "ese precio"} por unidad, ¿le dejo listo hoy el pedido de ${input.quantity ?? "su pedido"}?». Si dice que sí, solicita la aprobación en ese turno. «Puedo considerarlo» o «tal vez» no son un compromiso.`,
         );
       }
     }

@@ -23,7 +23,7 @@ import { loadFollowUpContext, type FollowUpAgreement } from "@/lib/agent/follow-
 import { askOwner } from "@/lib/agent/owner-notify";
 import { resolveProductRefs } from "@/lib/tools/catalog";
 import { isRepetition } from "@/lib/agent/follow-up-context";
-import { asksForConfirmation, asksPermissionToConsult, asksPermissionToQuote, asksPriceAndPaymentTogether, hideStockCount, mentionsSavingsAmount, onlyMatchesReference, repeatsOfferList, revealsApproval, soundsPushy, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
+import { asksForConfirmation, closesOnOffer, asksPermissionToConsult, asksPermissionToQuote, asksPriceAndPaymentTogether, hideStockCount, mentionsSavingsAmount, onlyMatchesReference, repeatsOfferList, revealsApproval, soundsPushy, stripZeroDiscount, usesInternalLanguage } from "@/lib/agent/commercial-reply-guard";
 import { announceOrderToOwner, pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { formatDateEs } from "@/lib/payments/payment-messages";
 
@@ -63,6 +63,17 @@ const REPEATED_LIST_NOTE = "(Nota interna del sistema, nunca la menciones al cli
 const REVEALS_APPROVAL_NOTE = "(Nota interna del sistema, nunca la menciones al cliente.) No digas que el precio o la condición \"se aprobó\", \"se autorizó\" ni que está \"pendiente de aprobación\": suena a que hay más margen y a trámite interno. Di que lo revisas con Abdiel, el gerente, o, si ya está resuelto, que pudiste conseguirlo como condición especial para este pedido. Mismas cifras.";
 
 const PUSHY_NOTE ="(Nota interna del sistema, nunca la menciones al cliente.) Tu respuesta suena a vendedor insistente (urgencia, presión o \"¿Me confirma el pedido?\"). Escríbela de nuevo con las mismas condiciones, respondiendo a lo que el cliente dijo y cerrando con una pregunta suave que deje la decisión en sus manos, por ejemplo \"¿Le sirve así?\" o \"Si le parece, se lo dejo listo\".";
+
+async function latestReadyOffer(conversationId: string): Promise<{ status: "ready"; total: number; netUnitPrice: number } | null> {
+  const [row] = await sql<Array<{ total: string; net: string }>>`
+    select payload->'result'->>'total' as total, payload->'result'->>'netUnitPrice' as net
+    from agente_comercial.audit_log
+    where conversation_id = ${conversationId} and payload->>'tool' = 'prepare_verified_offer'
+      and payload->'result'->>'status' = 'ready'
+    order by created_at desc limit 1
+  `;
+  return row ? { status: "ready", total: Number(row.total), netUnitPrice: Number(row.net) } : null;
+}
 
 type ConversationContext = {
   customerId: string;
@@ -145,7 +156,13 @@ async function executeAgentLoop(
     customerId: context.customerId,
     trigger: opts.trigger,
     customerMessage: opts.customerMessage,
-    answeringConfirmationRequest: !!opts.previousAgentMessage && asksForConfirmation(opts.previousAgentMessage),
+    // A "sí" accepts the offer when the agent's last message asked to close it,
+    // whatever the wording ("¿Se la dejo lista?"): it stated the verified total
+    // or unit price and ended with a question.
+    answeringConfirmationRequest:
+      !!opts.previousAgentMessage &&
+      (asksForConfirmation(opts.previousAgentMessage) ||
+        closesOnOffer(opts.previousAgentMessage, await latestReadyOffer(conversationId))),
   };
   const instructions = buildSystemPrompt(context, opts);
   let verifiedOffer: VerifiedOfferResult | null = null;

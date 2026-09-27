@@ -15,6 +15,7 @@ const HESITANT = new RegExp(
     "puede\\s+ser", "tal\\s+vez", "quiz[aá]s?", "suena\\s+bien", "me\\s+parece\\s+bien",
     "te\\s+aviso", "le\\s+aviso", "(te|le|les)\\s+confirmo", "lo\\s+veo", "lo\\s+vemos",
     "podr[ií]amos\\s+probar", "podemos\\s+probar", "probar[ií]a(?:mos)?",
+    "considerar(lo|la)?", "considerando", "evaluar(lo|la)?", "evaluando", "ver[ée]",
   ].map((p) => `\\b${p}\\b`).join("|"),
 );
 
@@ -44,6 +45,23 @@ export function explainNonConfirmationInContext(message: string, answeringConfir
   const text = message.toLowerCase().normalize("NFC");
   if (NEGATED.test(text) || HESITANT.test(text)) return reason;
   return AFFIRMATIVE.test(text) ? null : reason;
+}
+
+// "Si consigo que Abdiel me apruebe $17.50, ¿le dejo listo el pedido?"
+const CONDITIONAL_CLOSE = /\bsi\s+(?:le\s+)?(?:consigo|logro|me\s+aprueban|abdiel\s+(?:me\s+)?(?:lo\s+)?aprueba|lo\s+consigo)\b[^?]*\?|\ben\s+firme\b[^?]*\?/i;
+// "Si me lo dejas en 17.50 te lo compro", "trato hecho", "cerramos".
+const PURCHASE_INTENT = /\b(?:te|le|se|l[oa]s?)\s+(?:l[oa]s?\s+)?compr(?:o|amos)\b|\bcompr(?:o|amos)\s+(?:l[oa]s\s+)?\d+|\bme\s+l[oa]s?\s+llevo\b|\btrato\s+hecho\b|\bcerramos\b|\b(?:te|le)\s+hago\s+el\s+pedido\b|\bhago\s+el\s+pedido\b|\bconfirm(?:o|amos)\b|\b(?:es|va)\s+en\s+firme\b/;
+
+/**
+ * Whether the customer committed to buy if the special condition is approved:
+ * a purchase stated outright ("si me lo dejas en 17.50 te lo compro") or a
+ * plain yes to the agent's conditional close. "Puedo considerarlo" is not.
+ */
+export function customerCommitted(customerMessage: string, previousAgentMessage: string | null): boolean {
+  const text = customerMessage.toLowerCase().normalize("NFC");
+  if (NEGATED.test(text) || HESITANT.test(text)) return false;
+  if (PURCHASE_INTENT.test(text)) return true;
+  return !!previousAgentMessage && CONDITIONAL_CLOSE.test(previousAgentMessage) && AFFIRMATIVE.test(text);
 }
 
 export function assertOrderAllowed(ctx: { trigger: TurnTrigger; customerMessage?: string; answeringConfirmationRequest?: boolean }): void {

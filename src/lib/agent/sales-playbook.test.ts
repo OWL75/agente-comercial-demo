@@ -61,13 +61,13 @@ describe("sales playbook", () => {
     expect(prompt).toMatch(/Nunca ofrezcas por debajo de lo que pidió/);
     expect(prompt).toMatch(/Si su precio queda dentro de tu margen .* acéptalo tal cual/);
     expect(prompt).toMatch(/Si pide por debajo de tu margen, no lo aceptes de una vez: primero ofrece tu mejor precio/);
-    expect(prompt).toMatch(/Solo si insiste en su precio, solicita la aprobación/);
+    expect(prompt).toMatch(/Si insiste en su precio, no lo consultes todavía: cámbialo por un compromiso/);
     expect(prompt).toContain("netUnitPrice");
   });
 
   it("treats a yes to the confirmation question as a confirmation and hands payment to the system", () => {
-    expect(prompt).toMatch(/Un "sí" a tu pregunta de confirmación es una confirmación/);
-    expect(prompt).toMatch(/Nunca le pidas que escriba una frase exacta/);
+    expect(prompt).toMatch(/a tu pregunta de cierre, como "¿Se lo dejo listo\?", es una confirmación/);
+    expect(prompt).toMatch(/nunca le pidas una frase exacta/);
     expect(prompt).toMatch(/el sistema le envía al cliente el enlace de pago/);
   });
 

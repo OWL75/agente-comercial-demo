@@ -57,7 +57,7 @@ vi.mock("@/lib/agent/openai-client", () => ({
   }),
 }));
 
-import { database, presentBestPrice } from "./sql-harness";
+import { commitCustomer, database, presentBestPrice } from "./sql-harness";
 import { runAgentTurn } from "@/lib/agent/runtime";
 import { handleTelegramUpdate } from "@/lib/agent/owner-telegram";
 import { ownerChatId } from "@/lib/agent/owner-notify";
@@ -172,7 +172,10 @@ describe("the real dead end: 'Déjame validar…' never came back", () => {
 });
 
 describe("approvals decided from Telegram", () => {
-  beforeEach(async () => { await presentBestPrice(conversationId, 200); });
+  beforeEach(async () => {
+    await presentBestPrice(conversationId, 200);
+    await commitCustomer(conversationId, 200);
+  });
   const eightPercentTurn = (reply = "Lo estoy consultando con mi gerente y te escribo en breve.") => [
     calls(
       tool("prepare_verified_offer", { sku: SKU, quantity: 200, discountPct: 8, deliveryHours: 48 }),

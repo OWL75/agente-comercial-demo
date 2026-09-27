@@ -53,7 +53,16 @@ export async function resolveSku(value: string): Promise<string> {
   const byName = await sql<Array<{ sku: string }>>`
     select sku from agente_comercial.products where lower(name) = lower(${value.trim()}) limit 2
   `;
-  return byName.length === 1 ? byName[0].sku : value;
+  if (byName.length === 1) return byName[0].sku;
+  // A slug of the name ("SHAMPOO-PROFESSIONAL-1L", "shampoo_professional_1l").
+  const slug = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (slug.length < 4) return value;
+  const bySlug = await sql<Array<{ sku: string }>>`
+    select sku from agente_comercial.products
+    where regexp_replace(translate(lower(name), 'áéíóúüñ', 'aeiouun'), '[^a-z0-9]', '', 'g') = ${slug}
+    limit 2
+  `;
+  return bySlug.length === 1 ? bySlug[0].sku : value;
 }
 
 /** Applies resolveSku to every product reference a tool can receive. */

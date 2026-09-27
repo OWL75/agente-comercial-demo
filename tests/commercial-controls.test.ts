@@ -11,7 +11,7 @@ vi.mock("@/lib/agent/runtime", () => ({
   startConversation: vi.fn().mockResolvedValue({ reply: "Hola" }),
 }));
 
-import { database, presentBestPrice } from "./sql-harness";
+import { commitCustomer, database, presentBestPrice } from "./sql-harness";
 import { createSandboxOrder } from "@/lib/tools/orders";
 import { requestApproval, getApprovalResult } from "@/lib/tools/approvals";
 import { saveCustomerInsight } from "@/lib/tools/customer";
@@ -120,16 +120,31 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
     await presentBestPrice(conversationId, 200, 17.65);
     await expect(requestApproval(request())).rejects.toThrow("$17.58");
     await presentBestPrice(conversationId, 200);
+    await expect(requestApproval(request())).rejects.toThrow("compromiso");
+    await commitCustomer(conversationId, 200);
+    await expect(requestApproval(request())).resolves.toMatchObject({ approvalId: expect.any(String) });
+  });
+  it("real conversation 2026-09-27 02:24 UTC: 'puedo considerarlo' is no commitment; 'te lo compro' is", async () => {
+    await presentBestPrice(conversationId, 200);
+    const say = (sender: "agent" | "customer", body: string) => database.query(
+      "insert into agente_comercial.messages (conversation_id, direction, sender, body) values ($1, $2, $3, $4)",
+      [conversationId, sender === "agent" ? "outbound" : "inbound", sender, body]);
+    await say("agent", "Ya lo revisé con Abdiel y pude conseguirle $17.50 por unidad. ¿Se lo dejo listo para esta semana?");
+    await say("customer", "Si me lo dejas a 850 puedo considerarlo");
+    await expect(requestApproval(request())).rejects.toThrow("compromiso");
+    await say("customer", "Si me lo dejas a 17.00 te lo compro hoy");
     await expect(requestApproval(request())).resolves.toMatchObject({ approvalId: expect.any(String) });
   });
   it("counts the best price as offered once the customer read it, whatever the closing question (2026-09-25 19:31)", async () => {
     await database.query(
       "insert into agente_comercial.messages (conversation_id, direction, sender, body) values ($1, 'outbound', 'agent', $2)",
       [conversationId, "Lo mejor que puedo dejarle es *$17.58 por unidad*, total *$879*. ¿Le serviría probarlo así?"]);
+    await commitCustomer(conversationId, 200);
     await expect(requestApproval(request())).resolves.toMatchObject({ approvalId: expect.any(String) });
   });
   it("creates and reuses a pending approval, then accepts the exact approved order", async () => {
     await presentBestPrice(conversationId, 200);
+    await commitCustomer(conversationId, 200);
     const first = await requestApproval(request());
     const second = await requestApproval(request());
     expect(second.approvalId).toBe(first.approvalId);
@@ -140,6 +155,7 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
   });
   it("does not accept an approval for another quantity", async () => {
     await presentBestPrice(conversationId, 200);
+    await commitCustomer(conversationId, 200);
     const approval = await requestApproval(request());
     await decideApproval(approval.approvalId, "approve");
     const changed = { ...order(), discountPct: 8, items: [{ sku: "CAP-001", quantity: 201 }] };
@@ -149,6 +165,7 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
   it("does not approve out-of-policy modifications or requests", async () => {
     await expect(requestApproval({ ...request(), requestedPct: 15 })).rejects.toThrow("política");
     await presentBestPrice(conversationId, 200);
+    await commitCustomer(conversationId, 200);
     const approval = await requestApproval(request());
     await expect(decideApproval(approval.approvalId, "modify", 15)).rejects.toThrow("política");
     expect((await getApprovalResult({ approvalId: approval.approvalId, conversationId })).status).toBe("pending");
@@ -163,6 +180,7 @@ describe("Postgres-backed commercial controls (isolated fixture)", () => {
   });
   it("does not leak approval results across conversations", async () => {
     await presentBestPrice(conversationId, 200);
+    await commitCustomer(conversationId, 200);
     const approval = await requestApproval(request());
     await expect(getApprovalResult({ approvalId: approval.approvalId, conversationId: opportunityId })).rejects.toThrow("no encontrada");
   });

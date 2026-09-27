@@ -580,3 +580,40 @@ describe("real conversation 2026-09-25 22:33 UTC: one professional question", ()
     expect(h.script).toHaveLength(0);
   });
 });
+
+describe("real conversation 2026-09-27 02:25 UTC: a yes to '¿Se la dejo lista?' is the sale", () => {
+  it("creates the order on the first 'Si' and sends the payment link, without asking again", async () => {
+    const CLOSE = "Le puedo dejar las 50 unidades de Shampoo Professional 1L a *$17.65* cada una, total *$882.50*, con entrega en 24 horas y crédito a 30 días. ¿Se la dejo lista?";
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.65, deliveryHours: 24 })),
+      say(CLOSE),
+    ];
+    await runAgentTurn(conversationId, "Mi proveedor me lo deja a 17.75");
+    expect((await agentMessages()).at(-1)).toBe(CLOSE);
+
+    h.script = [
+      calls(tool("create_sandbox_order", { items: [{ sku: "CAP-001", quantity: 50 }], netUnitPrice: 17.65, creditTerms: "30 días", deliveryHours: 24 })),
+      say("Listo, su pedido quedó registrado. En el siguiente mensaje le envío el enlace para pagarlo."),
+    ];
+    await runAgentTurn(conversationId, "Si");
+    expect(await orders()).toEqual([expect.objectContaining({ total: "882.5" })]);
+    expect((await agentMessages()).some((m) => /autoriza|confirmar expresamente/i.test(m))).toBe(false);
+    expect((await agentMessages()).at(-1)).toMatch(/\/pagar\//);
+  });
+
+  it("also for 'autoriza el pedido…?' and a product slug the model made up", async () => {
+    h.script = [
+      calls(tool("prepare_verified_offer", { sku: "SHAMPOO-PROFESSIONAL-1L", quantity: 50, netUnitPrice: 17.65, deliveryHours: 24 })),
+      say("Para dejarlo listo: ¿autoriza el pedido de 50 unidades a *$17.65 cada una*, total *$882.50*, con entrega en 24 horas y crédito a 30 días?"),
+    ];
+    await runAgentTurn(conversationId, "Mi proveedor me lo deja a 17.75");
+    expect((await toolResults("prepare_verified_offer")).at(-1)).toMatchObject({ status: "ready", sku: "CAP-001" });
+
+    h.script = [
+      calls(tool("create_sandbox_order", { items: [{ sku: "CAP-001", quantity: 50 }], netUnitPrice: 17.65, creditTerms: "30 días", deliveryHours: 24 })),
+      say("Listo, su pedido quedó registrado."),
+    ];
+    await runAgentTurn(conversationId, "Si");
+    expect(await orders()).toHaveLength(1);
+  });
+});

@@ -52,3 +52,18 @@ export async function presentBestPrice(conversationId: string, quantity: number,
     [conversationId, JSON.stringify({ offer: { status: "ready", sku: "CAP-001", quantity, netUnitPrice, deliveryHours: 48 } })],
   );
 }
+
+/**
+ * The customer's commitment that request_approval requires before asking the
+ * owner for a price below the floor: the agent's conditional close and a yes.
+ */
+export async function commitCustomer(conversationId: string, quantity: number, unitPrice = 17.5): Promise<void> {
+  await database.query(
+    "insert into agente_comercial.messages (conversation_id, direction, sender, body, created_at) values ($1, 'outbound', 'agent', $2, clock_timestamp())",
+    [conversationId, `Si consigo que Abdiel me apruebe $${unitPrice.toFixed(2)} por unidad, ¿le dejo listo hoy el pedido de ${quantity}?`],
+  );
+  await database.query(
+    "insert into agente_comercial.messages (conversation_id, direction, sender, body, created_at) values ($1, 'inbound', 'customer', 'Sí', clock_timestamp())",
+    [conversationId],
+  );
+}

@@ -112,3 +112,12 @@ El agente ofreció "Puedo igualar el precio y la entrega: $17.75 por unidad". El
 - **Propuesta de valor (`get_value_proposition`).** Devuelve solo datos verificables del cliente (crédito disponible y plazo, stock para su pedido habitual, entrega al día siguiente si el producto califica, historial con Nova) y las ventajas aprobadas de la empresa en `src/lib/agent/company-profile.ts`. El agente usa una o dos que respondan a lo que el cliente valora y nunca afirma ventajas que no estén ahí. **Las ventajas de la empresa son valores de demo: el dueño debe confirmarlas o editarlas antes de un piloto real.**
 - **"Ya tengo contrato".** Nueva guía de objeción: preguntar si es exclusivo o tiene volumen mínimo; si no es exclusivo, proponer ser proveedor de respaldo o un pedido de prueba pequeño; si es exclusivo, respetarlo, preguntar cuándo vence y dejar el seguimiento para esa fecha. Nunca sugerir incumplirlo.
 - **"Me ofreces lo mismo".** No repetir la oferta: mejorar un paso y explicar en una frase la diferencia concreta.
+
+## Cierre y cobro sin fricción (conversación 2026-09-27 02:25 UTC)
+
+El cliente respondió "Si" a "¿Se la dejo lista?" y el pedido no se creó. El agente le pidió que "autorizara expresamente" y luego que "confirmara" otra vez, y el cliente se quedó sin enlace de pago. La causa: la guarda solo reconocía ciertas frases de cierre ("se lo dejo listo", "¿le sirve?"), no "se la dejo lista" ni "¿autoriza…?".
+
+- **Cierre reconocido por estructura:** si el mensaje anterior del agente dice el total o el precio por unidad de la última oferta verificada y termina en pregunta, un "sí", "dale", "ok" o "listo" lo acepta. El pedido se crea en ese mismo turno y el sistema envía el enlace de pago. Además se amplió la lista de frases de cierre.
+- **Nada de pedir la confirmación dos veces**, ni de pedir que "autorice expresamente". Al crear el pedido, el agente cierra con el número, el total, la fecha de entrega y el aviso de que el enlace llega en el siguiente mensaje.
+- **Nunca conceder sin recibir algo a cambio:** antes de pedirle a Abdiel un precio por debajo del piso, el agente consigue el compromiso del cliente con una pregunta condicional: "Si consigo que Abdiel me apruebe $17.50, ¿le dejo listo hoy el pedido de 50?". `request_approval` rechaza la solicitud si el cliente no se comprometió. Cuentan como compromiso "te lo compro", "trato hecho", "es en firme" o un sí a esa pregunta; "puedo considerarlo" o "tal vez" no cuentan.
+- **SKU inventado por el modelo** ("SHAMPOO-PROFESSIONAL-1L"): se resuelve al producto por su nombre.

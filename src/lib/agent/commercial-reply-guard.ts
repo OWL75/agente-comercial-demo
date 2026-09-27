@@ -8,7 +8,7 @@ const PENDING_LANGUAGE = /\b(pendiente|lo\s+reviso|lo\s+estoy\s+revisando|revisa
 // Both "tú" and "usted" forms: the agent writes in "usted" ("¿Confirma el pedido?").
 // Soft closes ("¿Le sirve así?", "¿Se lo dejo listo?") ask the same thing
 // without pressure, so a plain "sí" to them confirms the offer too.
-const CONFIRMATION_ASK = /\b(confirmas?|me\s+confirmas?|procedemos|procedo|cerramos|hago\s+el\s+pedido|registro\s+el\s+pedido|ingreso\s+el\s+pedido|lo\s+ingreso|(?:le|te)\s+(?:sirve|serviría|serviria|funciona|funcionaría|funcionaria)|se\s+lo\s+(?:dejo|preparo|aparto)|lo\s+dejo\s+listo)\b/i;
+const CONFIRMATION_ASK = /\b(confirmas?|me\s+confirmas?|procedemos|procedo|cerramos|hago\s+el\s+pedido|registro\s+el\s+pedido|ingreso\s+el\s+pedido|lo\s+ingreso|(?:le|te)\s+(?:sirve|serviría|serviria|funciona|funcionaría|funcionaria)|se\s+l[oa]s?\s+(?:dejo|preparo|aparto|env[ií]o|mando|despacho)|l[oa]s?\s+dejo\s+list[oa]s?|autoriza|le\s+parece\s+bien|lo\s+registro|seguimos)\b/i;
 
 /** The agent's message asks the customer to confirm the offer it presents. */
 export function asksForConfirmation(text: string): boolean {
@@ -151,8 +151,20 @@ export function commercialReplyViolations(args: {
 
 export function presentsFinalVerifiedOffer(reply: string, offer: VerifiedOfferResult | null): boolean {
   if (!offer || offer.status !== "ready") return false;
-  return CONFIRMATION_ASK.test(reply) &&
-    (FIRM_OFFER.test(reply) || moneyValues(reply).some((value) => sameMoney(value, offer.total)));
+  return (CONFIRMATION_ASK.test(reply) &&
+    (FIRM_OFFER.test(reply) || moneyValues(reply).some((value) => sameMoney(value, offer.total)))) ||
+    closesOnOffer(reply, offer);
+}
+
+/**
+ * Structural test, independent of wording: the message states the verified
+ * offer's total or unit price and ends by asking the customer something
+ * ("¿Se la dejo lista?", "¿Le funciona?"). A plain "sí" to it accepts the offer.
+ */
+export function closesOnOffer(message: string, offer: Pick<VerifiedOfferResult, "status" | "total" | "netUnitPrice"> | null): boolean {
+  if (!offer || offer.status !== "ready") return false;
+  if (!/\?\s*$/.test(message.trim())) return false;
+  return moneyValues(message).some((value) => sameMoney(value, offer.total) || sameMoney(value, offer.netUnitPrice));
 }
 
 /** Only sent when a promise to come back is real: an approval or an owner question is open. */
