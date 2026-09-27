@@ -200,3 +200,17 @@ export const IconPhone = (p: IconProps) => (
     <path d="M11 18.5h2" />
   </Svg>
 );
+export const IconPanelLeft = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+    <path d="M9.5 4.5v15" />
+    <path d="M15.5 10l-2 2 2 2" />
+  </Svg>
+);
+export const IconPanelRight = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+    <path d="M9.5 4.5v15" />
+    <path d="M13.5 10l2 2-2 2" />
+  </Svg>
+);

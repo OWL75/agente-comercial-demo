@@ -86,11 +86,18 @@ export function LiveProvider({ initialVersion, children }: { initialVersion: str
   return <LiveContext.Provider value={status}>{children}</LiveContext.Provider>;
 }
 
-export function LiveIndicator({ compact = false }: { compact?: boolean }) {
+export function LiveIndicator({ compact = false, dotOnly = false }: { compact?: boolean; dotOnly?: boolean }) {
   const status = useLiveStatus();
   const label = status === "live" ? "En vivo" : status === "connecting" ? "Conectando…" : "Sin conexión";
   const dot =
     status === "live" ? "bg-emerald-400 animate-live" : status === "connecting" ? "bg-amber-400" : "bg-slate-500";
+  if (dotOnly) {
+    return (
+      <span className="grid h-8 w-8 place-items-center rounded-full bg-white/[0.04] ring-1 ring-inset ring-white/[0.08]" title={label}>
+        <span className={`h-2 w-2 rounded-full ${dot}`} />
+      </span>
+    );
+  }
   return (
     <span
       className={`chip ${compact ? "" : "bg-white/[0.04] ring-1 ring-inset ring-white/[0.08]"} text-slate-300`}
