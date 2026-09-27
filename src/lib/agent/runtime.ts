@@ -5,6 +5,7 @@ import { getAgentModel, getOpenAiClient } from "@/lib/agent/openai-client";
 import { getOpenAiToolDefinitions, getTool, type ToolContext } from "@/lib/agent/tools";
 import { logAudit } from "@/lib/agent/audit";
 import { isWhatsAppConfigured, sendWhatsAppMessage } from "@/lib/channel/whatsapp-client";
+import { startTyping, stopTyping } from "@/lib/channel/whatsapp-typing";
 import { toWhatsAppText } from "@/lib/channel/whatsapp-format";
 import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
 import type { FollowUpStep } from "@/lib/agent/follow-up-sequence";
@@ -73,6 +74,16 @@ async function latestReadyOffer(conversationId: string): Promise<{ status: "read
     order by created_at desc limit 1
   `;
   return row ? { status: "ready", total: Number(row.total), netUnitPrice: Number(row.net) } : null;
+}
+
+/** WhatsApp id of the customer's latest message, to show "escribiendo…" against it. */
+async function lastCustomerMessageId(conversationId: string): Promise<string | null> {
+  const [row] = await sql<Array<{ id: string }>>`
+    select external_message_id as id from agente_comercial.messages
+    where conversation_id = ${conversationId} and sender = 'customer' and external_message_id is not null
+    order by created_at desc limit 1
+  `;
+  return row?.id ?? null;
 }
 
 type ConversationContext = {
@@ -500,6 +511,7 @@ async function executeAgentLoop(
   if (isWhatsAppConfigured() && context.customerPhone && reply) {
     try {
       if (await isCustomerSuppressed(context.customerId)) return "";
+      stopTyping(conversationId);
       await sendWhatsAppMessage(context.customerPhone, reply);
     } catch (err) {
       await logAudit({
@@ -555,6 +567,8 @@ export async function runAgentTurn(
   `;
   const context = await loadConversationContext(conversationId);
   const input = await loadHistoryAsInput(conversationId);
+  // The customer sees their message read and "escribiendo…" while Fernán works.
+  await startTyping(conversationId, opts.externalMessageId);
   const reply = await executeAgentLoop(conversationId, context, input, {
     isOpeningMessage: false,
     trigger: "customer_message",
@@ -563,7 +577,7 @@ export async function runAgentTurn(
     paymentNote: pendingPayment
       ? `El pedido #${pendingPayment.orderShort} ya está creado (${pendingPayment.quantity} × ${pendingPayment.productName}, total ${pendingPayment.total}, ${pendingPayment.terms}, vence el ${formatDateEs(pendingPayment.dueDate)}) y el enlace de pago ya se envió; está pendiente de pago. Ayuda al cliente con el pago sin crear otro pedido ni cambiar condiciones. Si pide el enlace otra vez, usa resend_payment_link. Si quiere pagar de otra forma, fraccionar, más plazo o tiene un problema, usa consult_owner y dile que lo revisas con Abdiel.`
       : undefined,
-  });
+  }).finally(() => stopTyping(conversationId));
   return { reply };
 }
 
@@ -632,7 +646,9 @@ export async function resumeAfterHumanDecision(
       content: `Un humano acaba de decidir sobre la aprobación pendiente: ${decisionSummary} El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo revisaste con Abdiel, el gerente. Si quedó aprobada, verifica la oferta con prepare_verified_offer y, si queda ready, preséntala como una condición especial que pudiste conseguirle para este pedido (nunca digas que "se aprobó" ni que hubo margen), en lista una sola vez, y pregúntale con naturalidad si se la deja lista; si fue rechazada, ofrece la mejor alternativa dentro de tu autonomía. El pedido solo puede crearse cuando el cliente responda confirmando. Actualiza la etapa con update_opportunity_stage si corresponde.`,
     },
   ];
-  const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" });
+  await startTyping(conversationId, await lastCustomerMessageId(conversationId));
+  const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" })
+    .finally(() => stopTyping(conversationId));
   return { reply };
 }
 
@@ -655,6 +671,8 @@ export async function resumeAfterOwnerAnswer(
       content: `Consultaste al dueño: "${question}". Su respuesta: "${answer}". El cliente no ha vuelto a escribir: escríbele tú ahora. Empieza diciendo con naturalidad que ya lo revisaste con Abdiel, el gerente, y sigue la conversación con esa indicación, sin presionar. Todo precio, descuento, crédito o entrega que menciones debe salir de prepare_verified_offer; si la indicación excede la política, las herramientas lo rechazarán y deberás ofrecer la mejor alternativa permitida. No cites su mensaje literal ni digas que algo "se aprobó".`,
     },
   ];
-  const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" });
+  await startTyping(conversationId, await lastCustomerMessageId(conversationId));
+  const reply = await executeAgentLoop(conversationId, context, input, { isOpeningMessage: false, trigger: "human_decision" })
+    .finally(() => stopTyping(conversationId));
   return { reply };
 }
