@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autonomyFloorUnitPrice, nextConcession, quoteByNetPrice } from "@/lib/policy/verified-offer";
+import { autonomyFloorUnitPrice, nextConcession, paymentTermsFor, quoteByNetPrice } from "@/lib/policy/verified-offer";
 
 const floor = 17.58;
 const base = { listUnitPrice: 18.5, floor };
@@ -63,5 +63,14 @@ describe("first offer once the competitor's price is known", () => {
 
   it("after a matched offer (older conversations), a request for a better price still steps down", () => {
     expect(nextConcession({ ...base, lastOffered: 17.75, ask: null, reference: 17.75 })).toEqual({ unitPrice: 17.65, basis: "step", withinAutonomy: true });
+  });
+});
+
+describe("special prices are cash", () => {
+  it("below the floor the terms are cash; at or above it, the account's terms", () => {
+    expect(paymentTermsFor(17.5, floor, "30 días")).toBe("contado");
+    expect(paymentTermsFor(17.0, floor, "30 días")).toBe("contado");
+    expect(paymentTermsFor(17.58, floor, "30 días")).toBe("30 días");
+    expect(paymentTermsFor(17.65, floor, "30 días")).toBe("30 días");
   });
 });

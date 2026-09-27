@@ -121,3 +121,13 @@ El cliente respondió "Si" a "¿Se la dejo lista?" y el pedido no se creó. El a
 - **Nada de pedir la confirmación dos veces**, ni de pedir que "autorice expresamente". Al crear el pedido, el agente cierra con el número, el total, la fecha de entrega y el aviso de que el enlace llega en el siguiente mensaje.
 - **Nunca conceder sin recibir algo a cambio:** antes de pedirle a Abdiel un precio por debajo del piso, el agente consigue el compromiso del cliente con una pregunta condicional: "Si consigo que Abdiel me apruebe $17.50, ¿le dejo listo hoy el pedido de 50?". `request_approval` rechaza la solicitud si el cliente no se comprometió. Cuentan como compromiso "te lo compro", "trato hecho", "es en firme" o un sí a esa pregunta; "puedo considerarlo" o "tal vez" no cuentan.
 - **SKU inventado por el modelo** ("SHAMPOO-PROFESSIONAL-1L"): se resuelve al producto por su nombre.
+
+## Precio especial = contado (decisión del usuario, 2026-09-27)
+
+Un precio por debajo del mejor precio del agente (el piso de $17.58), que solo Abdiel puede aprobar, es un precio especial y **siempre se paga de contado**. La rebaja se entrega a cambio de cobrar ahora y no a 30 días.
+
+- `paymentTermsFor` (verified-offer.ts) decide los términos: si el precio queda bajo el piso, "contado"; si no, el plazo de la cuenta.
+- `prepare_verified_offer` devuelve `creditTerms: "contado"` y `specialPriceCashOnly: true` para esos precios.
+- `create_sandbox_order` guarda el pedido de contado aunque el modelo pase "30 días". No consume el crédito de la cuenta. El cobro sale con la plantilla de contado.
+- El agente lo dice desde la pregunta condicional ("Si consigo que Abdiel me apruebe $17.50 de contado, ¿le dejo listo hoy el pedido de 50?") y nunca ofrece crédito para ese precio. Si el cliente prefiere crédito, su mejor opción es $17.58 a su plazo de siempre.
+- Abdiel ve en Telegram "Condición: precio especial de contado" al aprobar.

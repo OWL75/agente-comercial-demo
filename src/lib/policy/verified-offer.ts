@@ -129,3 +129,15 @@ export function nextConcession(args: { listUnitPrice: number; lastOffered: numbe
   const step = Math.min(fromCents - 1, Math.max(floorCents, halfway));
   return { unitPrice: step / 100, basis: step === floorCents ? "floor" : "step", withinAutonomy: true };
 }
+
+/** Payment terms of an owner-approved special price. */
+export const CASH_TERMS = "contado";
+
+/**
+ * A price below the agent's own floor is a special price the owner approved,
+ * and it is paid cash: the concession is traded for Nova getting paid now
+ * instead of in 30 days. At or above the floor the account's terms apply.
+ */
+export function paymentTermsFor(netUnitPrice: number, floor: number, accountTerms: string): string {
+  return netUnitPrice < floor - 0.005 ? CASH_TERMS : accountTerms;
+}

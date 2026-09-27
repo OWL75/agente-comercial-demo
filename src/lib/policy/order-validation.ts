@@ -33,6 +33,8 @@ export function moneyTotals(lines: OrderLine[], discountPct: number) {
 export function validateOrderConditions(args: {
   lines: OrderLine[]; discountPct: number; creditTerms: string; deliveryHours: number;
   total: number; customer: { paymentTerms: string; creditAvailable: number };
+  /** Paid cash (special price): the account's credit is not used. */
+  cash?: boolean;
   policy: { version: number; config: CommercialPolicyConfig }; approvals: ScopedApproval[];
 }) {
   const { lines, policy, customer } = args;
@@ -53,11 +55,13 @@ export function validateOrderConditions(args: {
   if (args.creditTerms !== customer.paymentTerms) {
     throw new Error("El plazo solicitado no coincide con la condición vigente. Cambiar plazos aún no está soportado.");
   }
-  if (!Number.isFinite(customer.creditAvailable) || customer.creditAvailable < 0) throw new Error("Crédito inválido.");
-  const credit = approved("credit")?.decided_value?.amount;
-  const extra = typeof credit === "number" && Number.isFinite(credit) && credit > 0 ? credit : 0;
-  if (args.total > customer.creditAvailable + extra || (!policy.config.credit.existingConditionAuto && !extra)) {
-    throw new Error("Crédito insuficiente o condición sin aprobación para este pedido.");
+  if (!args.cash) {
+    if (!Number.isFinite(customer.creditAvailable) || customer.creditAvailable < 0) throw new Error("Crédito inválido.");
+    const credit = approved("credit")?.decided_value?.amount;
+    const extra = typeof credit === "number" && Number.isFinite(credit) && credit > 0 ? credit : 0;
+    if (args.total > customer.creditAvailable + extra || (!policy.config.credit.existingConditionAuto && !extra)) {
+      throw new Error("Crédito insuficiente o condición sin aprobación para este pedido.");
+    }
   }
   if (!Number.isSafeInteger(args.deliveryHours) || args.deliveryHours <= 0) throw new Error("Entrega inválida.");
   const standard = args.deliveryHours === policy.config.delivery.standardHours;

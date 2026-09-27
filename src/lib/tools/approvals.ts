@@ -111,7 +111,7 @@ export async function requestApproval(input: RequestApprovalInput) {
       if (!lastCustomer || !customerCommitted(lastCustomer.body, lastCustomer.agent_before)) {
         const asked = input.requestedPct != null ? Math.round(product.unitPrice * (100 - input.requestedPct)) / 100 : null;
         throw new Error(
-          `Antes de consultar a Abdiel, consigue el compromiso del cliente con una pregunta condicional, por ejemplo: «Si consigo que Abdiel me apruebe ${asked != null ? `$${asked.toFixed(2)}` : "ese precio"} por unidad, ¿le dejo listo hoy el pedido de ${input.quantity ?? "su pedido"}?». Si dice que sí, solicita la aprobación en ese turno. «Puedo considerarlo» o «tal vez» no son un compromiso.`,
+          `Antes de consultar a Abdiel, consigue el compromiso del cliente con una pregunta condicional, por ejemplo: «Si consigo que Abdiel me apruebe ${asked != null ? `$${asked.toFixed(2)}` : "ese precio"} por unidad de contado, ¿le dejo listo hoy el pedido de ${input.quantity ?? "su pedido"}?». Si dice que sí, solicita la aprobación en ese turno. «Puedo considerarlo» o «tal vez» no son un compromiso.`,
         );
       }
     }

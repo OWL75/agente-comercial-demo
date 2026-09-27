@@ -15,6 +15,7 @@ const ready: VerifiedOfferResult = {
   stockAvailable: 820,
   creditAvailable: 12000,
   creditTerms: "30 días",
+  specialPriceCashOnly: false,
   deliveryHours: 24,
   deliveryEligible: true,
   policyVersion: 1,

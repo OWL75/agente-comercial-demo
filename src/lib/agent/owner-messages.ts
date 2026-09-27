@@ -105,6 +105,9 @@ export function formatApprovalForOwner(a: ApprovalForOwner): string {
       ? quoteMoney(unitPrice, qty, pct)
       : quoteByNetPrice(unitPrice, qty, Math.round(unitPrice * (100 - pct)) / 100);
     lines.push(`Precio: ${money(q.listUnitPrice)} → ${money(q.netUnitPrice)} c/u · total ${money(q.total)} (sin descuento ${money(q.subtotal)})`);
+    if (typeof autonomyMaxPct === "number" && pct > autonomyMaxPct) {
+      lines.push("Condición: precio especial de contado (el cliente paga con el enlace, sin crédito).");
+    }
   } else if (unitPrice) {
     lines.push(`Precio de lista: ${money(unitPrice)} c/u`);
   }

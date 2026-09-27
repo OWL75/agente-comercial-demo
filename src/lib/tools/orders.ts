@@ -4,7 +4,7 @@ import { sql } from "@/lib/db";
 import type { CommercialPolicyConfig } from "@/lib/db/policies";
 import { aggregateItems, moneyTotals, validateOrderConditions, type ScopedApproval } from "@/lib/policy/order-validation";
 import { uuidLike } from "@/lib/zod-helpers";
-import { quoteByNetPrice } from "@/lib/policy/verified-offer";
+import { autonomyFloorUnitPrice, CASH_TERMS, paymentTermsFor, quoteByNetPrice } from "@/lib/policy/verified-offer";
 
 export const createSandboxOrderInput = z.object({
   conversationId: uuidLike,
@@ -13,7 +13,7 @@ export const createSandboxOrderInput = z.object({
   discountPct: z.number().min(0).max(100).default(0),
   netUnitPrice: z.number().positive().optional()
     .describe("Precio neto por unidad de la oferta presentada, si se negoció por precio. Debe coincidir con la oferta."),
-  creditTerms: z.string().min(1).describe("Condición exacta devuelta por get_credit_status; no inventar ni cambiar el plazo."),
+  creditTerms: z.string().min(1).describe("Condición de pago de la oferta presentada (creditTerms de prepare_verified_offer): el plazo de su cuenta, o \"contado\" si es un precio especial. No inventar ni cambiar el plazo."),
   deliveryHours: z.number().int().positive().describe("Horas exactas consultadas en get_delivery_options o aprobadas por un humano."),
 });
 export type CreateSandboxOrderInput = z.infer<typeof createSandboxOrderInput>;
@@ -97,14 +97,20 @@ export async function createSandboxOrder(rawInput: CreateSandboxOrderInput) {
       where conversation_id = ${input.conversationId} and customer_id = ${input.customerId}
       order by type, created_at desc, id desc
     `;
-    validateOrderConditions({ ...input, lines, total, policy, approvals,
-      customer: { paymentTerms: customer.payment_terms, creditAvailable: Number(customer.credit_available) } });
+    // An owner-approved price below the agent's floor is paid cash, whatever
+    // terms the model passed: that is what the customer agreed to.
+    const floor = autonomyFloorUnitPrice(lines[0].unitPrice, policy.config.discount.autoMaxPct);
+    const terms = paymentTermsFor(total / lines[0].quantity, floor, customer.payment_terms);
+    const cash = terms === CASH_TERMS && customer.payment_terms !== CASH_TERMS;
+    if (cash) input.creditTerms = CASH_TERMS;
+    validateOrderConditions({ ...input, lines, total, policy, approvals, cash,
+      customer: { paymentTerms: terms, creditAvailable: Number(customer.credit_available) } });
     const deliveryOption = `${input.deliveryHours} horas`;
     const [order] = await tx`
       insert into agente_comercial.orders
         (conversation_id, customer_id, subtotal, discount_pct, total, credit_terms, delivery_option, status)
       values (${input.conversationId}, ${input.customerId}, ${subtotal}, ${input.discountPct}, ${total},
-        ${customer.payment_terms}, ${deliveryOption}, 'sandbox_created') returning id
+        ${terms}, ${deliveryOption}, 'sandbox_created') returning id
     `;
     for (const line of lines) {
       await tx`insert into agente_comercial.order_items (order_id, product_id, quantity, unit_price)
@@ -118,7 +124,7 @@ export async function createSandboxOrder(rawInput: CreateSandboxOrderInput) {
         ${tx.json({ orderId: order.id, policyVersion: policy.version, total })})`;
     // Sandbox only: no stock/credit reservation and no ERP side effect.
     return { orderId: order.id, subtotal, discountPct: input.discountPct, total,
-      creditTerms: customer.payment_terms, deliveryOption,
+      creditTerms: terms, deliveryOption,
       items: lines.map(({ sku, name, quantity, unitPrice }) => ({ sku, name, quantity, unitPrice })) };
   });
 }

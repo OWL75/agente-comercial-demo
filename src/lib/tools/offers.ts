@@ -9,6 +9,8 @@ import {
   quoteMoney,
   nextConcession,
   smallestNaturalDiscount,
+  CASH_TERMS,
+  paymentTermsFor,
 } from "@/lib/policy/verified-offer";
 import { uuidLike } from "@/lib/zod-helpers";
 
@@ -52,6 +54,8 @@ export type VerifiedOfferResult = {
   stockAvailable: number;
   creditAvailable: number;
   creditTerms: string;
+  /** Below the agent's floor: a special price, paid cash (never on credit). */
+  specialPriceCashOnly: boolean;
   deliveryHours: number;
   deliveryEligible: boolean;
   policyVersion: number;
@@ -166,7 +170,8 @@ export async function prepareVerifiedOffer(rawInput: PrepareVerifiedOfferInput):
     negotiation,
     stockAvailable: Number(product.stock),
     creditAvailable: Number(conversation.credit_available),
-    creditTerms: conversation.payment_terms,
+    creditTerms: paymentTermsFor(money.netUnitPrice, floor, conversation.payment_terms),
+    specialPriceCashOnly: paymentTermsFor(money.netUnitPrice, floor, conversation.payment_terms) === CASH_TERMS,
     deliveryHours: input.deliveryHours,
     deliveryEligible: product.express_eligible === true,
     policyVersion: policy.version,

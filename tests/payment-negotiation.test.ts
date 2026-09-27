@@ -197,16 +197,19 @@ describe("negotiation: never below the customer's ask", () => {
     const request = h.telegram.at(-1)!;
     expect(request.text).toContain("Pide: 5.41% de descuento en 50 × Shampoo Professional 1L");
     expect(request.text).toContain("$18.50 → $17.50 c/u · total $875.00");
+    expect(request.text).toContain("Condición: precio especial de contado");
     const { rows: [approval] } = await database.query<{ id: string }>("select id from agente_comercial.approvals");
 
     h.script = [
       calls(tool("prepare_verified_offer", { sku: "CAP-001", quantity: 50, netUnitPrice: 17.5, customerAskUnitPrice: 17.5, deliveryHours: 24 })),
-      say("Ya lo consulté: se lo dejo en $17.50 por unidad, total $875.00, con entrega en 24 horas y crédito a 30 días. ¿Confirma el pedido en estas condiciones?"),
+      say("Ya lo consulté: se lo dejo en $17.50 por unidad de contado, total $875.00, con entrega en 24 horas. ¿Se lo dejo listo?"),
     ];
     await handleTelegramUpdate({
       update_id: 77, callback_query: { id: "cb", from: { id: 555001 }, data: `ap:${approval.id}:5.4054`, message: { message_id: request.messageId, chat: { id: 555001 } } },
     });
     expect((await agentMessages()).at(-1)).toMatch(/^Ya lo consulté: se lo dejo en \$17\.50/);
+    // A special price below the floor is a cash price.
+    expect((await toolResults("prepare_verified_offer")).at(-1)).toMatchObject({ status: "ready", creditTerms: "contado", specialPriceCashOnly: true });
 
     h.script = [
       calls(tool("create_sandbox_order", { items: [{ sku: "CAP-001", quantity: 50 }], netUnitPrice: 17.5, creditTerms: "30 días", deliveryHours: 24 })),
@@ -214,6 +217,10 @@ describe("negotiation: never below the customer's ask", () => {
     ];
     await runAgentTurn(conversationId, "Si");
     expect(await orders()).toEqual([{ total: "875", discount_pct: "5.4054", status: "pendiente_pago" }]);
+    const { rows: [terms] } = await database.query<{ credit_terms: string }>("select credit_terms from agente_comercial.orders");
+    expect(terms.credit_terms).toBe("contado");
+    expect((await agentMessages()).at(-1)).not.toMatch(/crédito a 30 días/);
+    expect((await agentMessages()).at(-1)).toMatch(/Pagar pedido: https:\/\/demo\.test\/pagar\//);
   });
 });
 
