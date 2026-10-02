@@ -43,6 +43,7 @@ const request = () => ({ customerId, conversationId, type: "discount" as const, 
 
 async function presentOffer(input = order()) {
   const item = input.items[0];
+  await new Promise((resolve) => setTimeout(resolve, 5)); // coarse WASM clock: keep it the latest
   await database.query(
     `insert into agente_comercial.audit_log (conversation_id, category, label, payload)
      values ($1, 'policy_check', 'Oferta verificada presentada para confirmación', $2)`,

@@ -46,6 +46,9 @@ export const sql = sqlFor(database);
  * which request_approval requires before asking the manager for a discount.
  */
 export async function presentBestPrice(conversationId: string, quantity: number, netUnitPrice = 17.58): Promise<void> {
+  // The WASM clock is coarse: an offer presented in the same tick as an earlier
+  // one can tie on created_at, and "latest presented offer" then picks either.
+  await new Promise((resolve) => setTimeout(resolve, 5));
   await database.query(
     `insert into agente_comercial.audit_log (conversation_id, category, label, payload)
      values ($1, 'policy_check', 'Oferta verificada presentada para confirmación', $2)`,
