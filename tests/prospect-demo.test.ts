@@ -28,9 +28,9 @@ vi.mock("@/lib/agent/conversation-lifecycle", async () => {
   const { sql } = await import("./sql-harness");
   return {
     startConversationForOpportunity: async (opportunityId: string) => {
-      const [o] = await sql<Array<{ customer_id: string }>>`select customer_id from agente_comercial.opportunities where id = ${opportunityId}`;
-      const [c] = await sql<Array<{ id: string }>>`
-        insert into agente_comercial.conversations (opportunity_id, customer_id, channel) values (${opportunityId}, ${o.customer_id}, 'whatsapp') returning id`;
+      const [o] = (await sql`select customer_id from agente_comercial.opportunities where id = ${opportunityId}`) as Array<{ customer_id: string }>;
+      const [c] = (await sql`
+        insert into agente_comercial.conversations (opportunity_id, customer_id, channel) values (${opportunityId}, ${o.customer_id}, 'whatsapp') returning id`) as Array<{ id: string }>;
       h.started.push(c.id);
       return c.id;
     },
