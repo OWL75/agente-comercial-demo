@@ -4,6 +4,7 @@ import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/agent/audit";
 import { isCustomerSuppressed } from "@/lib/agent/contact-permission";
 import { askOwner, notifyOwner } from "@/lib/agent/owner-notify";
+import { isProspectConversation } from "@/lib/prospect/flags";
 import { todayInPanama } from "@/lib/agent/system-prompt";
 import { templateDeliveryMode } from "@/lib/agent/template-outreach";
 import {
@@ -229,7 +230,14 @@ export async function markPaymentReceived(token: string, method: PaymentMethod):
     payload: { paymentToken: token, orderId: payment.orderId, method, amount: payment.total, simulated: true },
   });
   await tellCustomer(payment, paymentTemplate("pago_recibido", payment));
-  await notifyOwner(payment.conversationId, ownerPaymentReceivedText(payment, label));
+  if (await isProspectConversation(payment.conversationId)) {
+    // The prospect just saw the whole sale: now the offer to have it in their business.
+    const { demoClosingText } = await import("@/lib/prospect/demo");
+    await tellCustomer(payment, { text: demoClosingText() });
+    await notifyOwner(null, `✅ Un prospecto completó la demo por WhatsApp (pedido de prueba pagado): ${payment.customerPhone ?? "sin teléfono"}`);
+  } else {
+    await notifyOwner(payment.conversationId, ownerPaymentReceivedText(payment, label));
+  }
   return { alreadyPaid: false };
 }
 

@@ -2,6 +2,7 @@ import "server-only";
 import { formatDraftForOwner } from "@/lib/agent/owner-messages";
 import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/agent/audit";
+import { isProspectConversation } from "@/lib/prospect/flags";
 import { getApprovalDetail } from "@/lib/db/approvals";
 import { isTelegramConfigured, sendTelegramMessage } from "@/lib/channel/telegram-client";
 import {
@@ -195,6 +196,8 @@ export async function askOwner(
   question: string,
   opts: { draft?: string | null; turnOffer?: VerifiedOfferResult | null } = {},
 ): Promise<boolean> {
+  // A prospect's demo has no owner on Telegram: Fernán resolves within his rules.
+  if (await isProspectConversation(conversationId)) return false;
   const chatId = await ready(conversationId, "Consulta al dueño");
   if (!chatId) return false;
   try {
@@ -228,6 +231,7 @@ export async function askOwnerForValue(conversationId: string, approvalId: strin
 
 /** Informational message to the owner (no reply expected). Best effort, like every owner message. */
 export async function notifyOwner(conversationId: string | null, text: string): Promise<boolean> {
+  if (await isProspectConversation(conversationId)) return false;
   const chatId = isTelegramConfigured() ? await ownerChatId() : null;
   if (!chatId) return false;
   try {

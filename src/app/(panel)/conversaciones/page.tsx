@@ -6,7 +6,7 @@ import { IconChat } from "@/components/ui/icons";
 export const dynamic = "force-dynamic";
 
 export default async function ConversacionesPage() {
-  const conversations = await listConversations(100);
+  const [conversations, prospects] = await Promise.all([listConversations(100), listConversations(50, { prospects: true })]);
   const active = conversations.filter((c) => !c.endedAt);
   const ended = conversations.filter((c) => c.endedAt);
 
@@ -28,6 +28,20 @@ export default async function ConversacionesPage() {
         >
           <ConversationList items={active} emptyTitle="No hay conversaciones activas en este momento" />
         </Card>
+
+        {prospects.length > 0 && (
+          <Card
+            title="Prospectos que probaron a Fernán"
+            action={<span className="text-xs text-slate-500 tabular-nums">{prospects.length}</span>}
+            bodyClassName=""
+            className="overflow-hidden"
+          >
+            <p className="border-b border-white/[0.05] px-5 py-3 text-xs text-slate-500">
+              Escribieron DEMO al WhatsApp del agente y Fernán les vendió a ellos. Cada número es un posible cliente.
+            </p>
+            <ConversationList items={prospects} />
+          </Card>
+        )}
 
         {ended.length > 0 && (
           <Card

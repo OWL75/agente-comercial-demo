@@ -11,8 +11,10 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   const [[counts], version, cookieStore] = await Promise.all([
     sql<Array<{ pending: number; active: number }>>`
       select
-        (select count(*) from agente_comercial.approvals where status = 'pending')::int as pending,
-        (select count(*) from agente_comercial.conversations where ended_at is null)::int as active
+        (select count(*) from agente_comercial.approvals a join agente_comercial.customers c on c.id = a.customer_id
+          where a.status = 'pending' and c.segment is distinct from 'Prospecto demo')::int as pending,
+        (select count(*) from agente_comercial.conversations x join agente_comercial.customers c on c.id = x.customer_id
+          where x.ended_at is null and c.segment is distinct from 'Prospecto demo')::int as active
     `,
     workspaceVersion().catch(() => null),
     cookies(),

@@ -136,7 +136,8 @@ export type ConversationListItem = {
 };
 
 /** Conversations with their latest message, most recent activity first. */
-export async function listConversations(limit = 50): Promise<ConversationListItem[]> {
+export async function listConversations(limit = 50, opts: { prospects?: boolean } = {}): Promise<ConversationListItem[]> {
+  const prospects = opts.prospects === true;
   const rows = await sql<
     Array<{
       id: string;
@@ -159,7 +160,7 @@ export async function listConversations(limit = 50): Promise<ConversationListIte
       exists(select 1 from agente_comercial.approvals a where a.conversation_id = conv.id and a.status = 'pending') as has_pending,
       (select o.total from agente_comercial.orders o where o.conversation_id = conv.id order by o.created_at desc limit 1) as order_total
     from agente_comercial.conversations conv
-    join agente_comercial.customers c on c.id = conv.customer_id
+    join agente_comercial.customers c on c.id = conv.customer_id and (coalesce(c.segment = 'Prospecto demo', false) = ${prospects})
     left join lateral (
       select m.body, m.sender, m.created_at from agente_comercial.messages m
       where m.conversation_id = conv.id and m.sender <> 'system'

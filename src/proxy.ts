@@ -21,5 +21,5 @@ export async function proxy(request: NextRequest) {
 export const config = {
   // /pagar/<token> is a public payment link: the unguessable token is its credential.
   // /api/cron authenticates with CRON_SECRET, not the demo session.
-  matcher: ["/((?!login|api/login|api/webhooks|api/cron|pagar/|_next/static|_next/image|favicon.ico|icon.svg).*)"],
+  matcher: ["/((?!login|api/login|api/webhooks|api/cron|pagar/|fernan|_next/static|_next/image|favicon.ico|icon.svg).*)"],
 };

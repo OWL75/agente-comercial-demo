@@ -22,6 +22,7 @@ import { assertOrderAllowed, type TurnTrigger } from "@/lib/agent/order-guard";
 import { askOwner, notifyOwnerOfApproval } from "@/lib/agent/owner-notify";
 import { pendingPaymentFor, sendPaymentRequest } from "@/lib/payments/payments";
 import { getValueProposition, getValuePropositionInput } from "@/lib/tools/value";
+import { isProspectConversation, scheduleDemoApproval } from "@/lib/prospect/flags";
 import { z } from "zod";
 
 // Identity the model never has to handle: every tool call in a conversation
@@ -139,6 +140,10 @@ export const TOOLS: AnyTool[] = [
       const result = await requestApproval({ ...input, conversationId: ctx.conversationId, customerId: ctx.customerId });
       // After the transaction commits: the owner is asked on Telegram and their
       // decision makes the agent write to the customer on its own.
+      if (await isProspectConversation(ctx.conversationId)) {
+        scheduleDemoApproval(result.approvalId, ctx.conversationId);
+        return { ...result, ownerNotified: true };
+      }
       const ownerNotified = await notifyOwnerOfApproval(result.approvalId);
       return { ...result, ownerNotified };
     },

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { verifyMetaSignature } from "@/lib/channel/verify-signature";
 import { findOpenConversationByPhone, findPendingPaymentConversationByPhone } from "@/lib/agent/conversation-lifecycle";
 import { runAgentTurn } from "@/lib/agent/runtime";
+import { isDemoRequest, startProspectDemo } from "@/lib/prospect/demo";
+import { isProspectConversation } from "@/lib/prospect/flags";
 import { logAudit } from "@/lib/agent/audit";
 import { recordOptOutRequest } from "@/lib/agent/template-outreach";
 import { isExplicitOptOutText, isOptOutButtonText } from "@/lib/channel/whatsapp-templates";
@@ -114,6 +116,16 @@ export async function POST(request: Request) {
   for (const message of messages) {
     const conversationId = (await findOpenConversationByPhone(message.from)) ??
       (await findPendingPaymentConversationByPhone(message.from));
+    const incoming = messageText(message)!;
+    // "DEMO" from the button on /fernan or the video: Fernán sells to the prospect.
+    if (isDemoRequest(incoming) && (!conversationId || (await isProspectConversation(conversationId)))) {
+      try {
+        await startProspectDemo(message.from);
+      } catch (error) {
+        await logAudit({ conversationId: null, category: "system", label: `No se pudo iniciar la demo del prospecto: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300), payload: { fromDigits: message.from } });
+      }
+      continue;
+    }
     if (!conversationId) {
       await logAudit({
         conversationId: null,

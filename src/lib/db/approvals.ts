@@ -17,7 +17,7 @@ export async function listApprovals(status?: string): Promise<ApprovalListItem[]
     select a.id, c.name as customer_name, a.type, a.status, a.created_at, a.conversation_id
     from agente_comercial.approvals a
     join agente_comercial.customers c on c.id = a.customer_id
-    where ${status ?? null}::text is null or a.status = ${status ?? null}
+    where (${status ?? null}::text is null or a.status = ${status ?? null}) and c.segment is distinct from 'Prospecto demo'
     order by a.created_at desc
   `;
   return rows.map((r) => ({

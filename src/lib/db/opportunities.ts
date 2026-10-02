@@ -71,7 +71,8 @@ export async function listOpportunities(
     from agente_comercial.opportunities o
     join agente_comercial.customers c on c.id = o.customer_id
     where
-      (${filters.search ?? null}::text is null or c.name ilike '%' || ${filters.search ?? null} || '%')
+      c.segment is distinct from 'Prospecto demo'
+      and (${filters.search ?? null}::text is null or c.name ilike '%' || ${filters.search ?? null} || '%')
       and (${filters.priority ?? null}::text is null or o.priority = ${filters.priority ?? null})
       and (${filters.status ?? null}::text is null or o.status = ${filters.status ?? null})
     order by
@@ -125,14 +126,21 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
     }>
   >`
     select
-      (select count(*) from agente_comercial.customers) as clientes_analizados,
-      (select count(*) from agente_comercial.opportunities where status <> 'perdida') as oportunidades_detectadas,
-      (select coalesce(sum(potential_high), 0) from agente_comercial.opportunities where status not in ('perdida', 'cerrada')) as valor_potencial,
-      (select count(*) from agente_comercial.conversations where ended_at is null) as conversaciones_activas,
-      (select count(*) from agente_comercial.conversations where ended_at is not null) as conversaciones_completadas,
-      (select coalesce(sum(total), 0) from agente_comercial.orders) as ventas_recuperadas,
-      (select count(*) from agente_comercial.approvals where status = 'pending') as excepciones_pendientes,
-      (select count(*) from agente_comercial.approvals where status <> 'pending') as intervencion_humana
+      (select count(*) from agente_comercial.customers c where c.segment is distinct from 'Prospecto demo') as clientes_analizados,
+      (select count(*) from agente_comercial.opportunities o join agente_comercial.customers c on c.id = o.customer_id
+        where o.status <> 'perdida' and c.segment is distinct from 'Prospecto demo') as oportunidades_detectadas,
+      (select coalesce(sum(o.potential_high), 0) from agente_comercial.opportunities o join agente_comercial.customers c on c.id = o.customer_id
+        where o.status not in ('perdida', 'cerrada') and c.segment is distinct from 'Prospecto demo') as valor_potencial,
+      (select count(*) from agente_comercial.conversations x join agente_comercial.customers c on c.id = x.customer_id
+        where x.ended_at is null and c.segment is distinct from 'Prospecto demo') as conversaciones_activas,
+      (select count(*) from agente_comercial.conversations x join agente_comercial.customers c on c.id = x.customer_id
+        where x.ended_at is not null and c.segment is distinct from 'Prospecto demo') as conversaciones_completadas,
+      (select coalesce(sum(x.total), 0) from agente_comercial.orders x join agente_comercial.customers c on c.id = x.customer_id
+        where c.segment is distinct from 'Prospecto demo') as ventas_recuperadas,
+      (select count(*) from agente_comercial.approvals x join agente_comercial.customers c on c.id = x.customer_id
+        where x.status = 'pending' and c.segment is distinct from 'Prospecto demo') as excepciones_pendientes,
+      (select count(*) from agente_comercial.approvals x join agente_comercial.customers c on c.id = x.customer_id
+        where x.status <> 'pending' and c.segment is distinct from 'Prospecto demo') as intervencion_humana
   `;
 
   return {
