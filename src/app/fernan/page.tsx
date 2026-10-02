@@ -59,6 +59,19 @@ const FAQ = [
   },
 ];
 
+/** "paypal.me/x" or a full URL → https URL; anything else is ignored. */
+function paypalLink(raw: string | undefined): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  const url = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  try {
+    const parsed = new URL(url);
+    return /(^|\.)paypal\.(me|com)$/i.test(parsed.hostname) ? parsed.toString().replace(/\/$/, "") : null;
+  } catch {
+    return null;
+  }
+}
+
 function TryButton({ href }: { href: string | null }) {
   if (!href) return null;
   return (
@@ -71,12 +84,14 @@ function TryButton({ href }: { href: string | null }) {
 export default async function FernanPage() {
   const [digits, slotsLeft] = await Promise.all([agentWhatsAppDigits(), founderSlotsLeft()]);
   const demoLink = digits ? waLink(digits, "DEMO") : null;
-  const paypal = process.env.PAYPAL_PAYMENT_URL?.trim() || null;
+  const paypal = paypalLink(process.env.PAYPAL_PAYMENT_URL);
   const yappy = process.env.YAPPY_DIRECTORY?.trim() || null;
   const contact = (process.env.CONTACT_WHATSAPP ?? "").replace(/\D/g, "") || null;
   const loom = process.env.LOOM_EMBED_URL?.trim() || null;
   const founder = slotsLeft > 0;
   const setup = founder ? FOUNDER_OFFER.setup.founder : FOUNDER_OFFER.setup.list;
+  // A paypal.me link opens with the amount already filled in.
+  const paypalHref = paypal && /paypal\.me\//i.test(paypal) ? `${paypal.replace(/\/+$/, "")}/${setup}USD` : paypal;
   const monthly = founder ? FOUNDER_OFFER.monthly.founder : FOUNDER_OFFER.monthly.list;
 
   return (
@@ -228,9 +243,12 @@ export default async function FernanPage() {
             </p>
             <div className="mt-5 space-y-3">
               {paypal ? (
-                <a href={paypal} target="_blank" rel="noreferrer" className="btn w-full bg-[#ffc439] text-slate-950 hover:brightness-105">
-                  Pagar {usd(setup)} con PayPal
-                </a>
+                <div>
+                  <a href={paypalHref ?? paypal} target="_blank" rel="noreferrer" className="btn w-full bg-[#ffc439] text-slate-950 hover:brightness-105">
+                    Pagar {usd(setup)} con PayPal
+                  </a>
+                  <p className="mt-1.5 text-center text-[11px] text-slate-500">Con su saldo de PayPal o una tarjeta de crédito o débito vinculada.</p>
+                </div>
               ) : (
                 <p className="rounded-xl bg-white/[0.04] px-4 py-3 text-sm text-slate-400 ring-1 ring-inset ring-white/[0.06]">PayPal: disponible muy pronto.</p>
               )}
@@ -238,7 +256,7 @@ export default async function FernanPage() {
                 <div className="rounded-xl bg-white/[0.04] px-4 py-3 ring-1 ring-inset ring-white/[0.08]">
                   <p className="text-sm font-semibold text-white">Pagar con Yappy</p>
                   <p className="mt-1 text-sm text-slate-300">
-                    En Yappy, busque <span className="font-semibold text-white">{yappy}</span> y envíe {usd(setup)} con el nombre de su empresa en la descripción.
+                    {/^[\d\s+()-]+$/.test(yappy) ? "Envíe" : "En Yappy, busque"} <span className="font-semibold text-white">{yappy}</span>{/^[\d\s+()-]+$/.test(yappy) ? ` por Yappy ${usd(setup)}` : ` y envíe ${usd(setup)}`} con el nombre de su empresa en la descripción.
                   </p>
                 </div>
               ) : (
